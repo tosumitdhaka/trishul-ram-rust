@@ -4,7 +4,7 @@
 
 ## Decision: P1_EPHEMERAL_ONLY
 
-P1 MUST NOT implement or advertise durable admission, source acknowledgement, confirmed publication, transactional state, crash recovery, persistent run history, "strict" or at-least-once delivery. P1 has **no manager, network agent or persistent worker journal**. The engine is exercised with actual files **only inside disposable test-controlled directories**. The P2 implementation gate is blocked until durable ledger/admission, local sink publication and replay semantics in [source-units.md](source-units.md) and [attempt-protocol.md](attempt-protocol.md) have conformance tests.
+P1 MUST NOT implement or advertise durable admission, source acknowledgement, confirmed publication, transactional state, crash recovery, persistent run history, "strict" or at-least-once delivery. P1 has **no manager, network agent or persistent worker journal**. The engine is exercised with actual files **only inside disposable test-controlled directories**. The P2 implementation gate is blocked until durable ledger/admission, local sink publication and replay semantics in [source-unit-contract.md](source-unit-contract.md) and [attempt-protocol.md](attempt-protocol.md) have conformance tests.
 
 ### Exact permitted side effects
 

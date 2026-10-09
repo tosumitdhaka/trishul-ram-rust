@@ -30,3 +30,15 @@ Line ranges are within these proposed Markdown files and are provided as navigat
 2. Independent REVIEWER compares `96e11006e4784d2e70a7b0663c598c16376b04f7` → new candidate at live PR head; returns PASS or actionable CHANGES_REQUIRED against exact SHA.
 3. ORCHESTRATOR/Project Owner records `PHASE_0_ARCHITECTURE_APPROVED` only if independent review passes, with SHA and any bounded conditions; then separately authorizes P1 code scope and gates.
 4. Before approval, PR remains draft. Do not merge, change Python reference/SNMP repo, or begin Rust implementation.
+
+## R2 targeted remediation — review 5473428568 (successor candidate)
+
+**Governance:** the R2 review on `d128df98b13c4f9316773cd66e2bb965850127b2` remains `CHANGES_REQUIRED`; Phase 0 remains a proposal and Phase 1 is **WITHHELD**. This section documents the bounded DESIGN_OWNER response, **not** independent review approval.
+
+| R2 finding | Before | Proposed after / verification |
+|---|---|---|
+| R2-F1 — HIGH | Golden YAML included `skip_processed:false` and `delete_after_read:false` although P1 rejects both options | Remove both keys, repin exact new golden Git blob in `p1-compatibility-matrix.md`, require `COMP-01-GOLDEN` compile and `COMP-01-SKIP/DELETE-{TRUE,FALSE}` plus unknown-option pre-effect rejections; `p1-safety-boundary.md` explicitly states absent-only policy |
+| R2-F2 — HIGH | `dispatching` had no journal-proven rejection transition; `admitted` could not terminalize a proven pre-start failure | `attempt-protocol.md` defines exact-authority refusal tombstone and guarded `terminal_rejected`, atomic pre-start failure/outbox and terminal failed receipt, guard/retry/replay/unknown handling, and `OWN-10..14` acceptance scenarios |
+| R2-F3 — LOW | C05 and C09 citations extended beyond the pinned Python file lengths | C05 now cites `json_serializer.py:34-38` and `pipeline.py:1247-1250` for the serializer config; C09 cites `filter_rows.py:46-80` and its existing test class `test_transforms.py:236-266` |
+
+**Validation scope:** fixture/source citation pinning and static Markdown/YAML contract inspection; **no** runtime, Python differential, Rust build or restart test is implied. Preserve closed P0-R1/R2/R5/R6 contracts unchanged. Independent exact-SHA re-review of R2-F1/F2/F3 is required before any architecture gate decision.

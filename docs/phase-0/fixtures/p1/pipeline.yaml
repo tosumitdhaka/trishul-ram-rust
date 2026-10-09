@@ -9,8 +9,6 @@ pipeline:
     path: ${TRAM_P1_INPUT_DIR}
     file_pattern: "*.json"
     recursive: false
-    skip_processed: false
-    delete_after_read: false
   serializer_in:
     type: json
   transforms:

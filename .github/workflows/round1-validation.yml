@@ -37,24 +37,3 @@ jobs:
       - name: Focused P1 config tests
         if: always()
         run: cargo +1.88.0 test -p tram-config --locked
-      - name: Format and generated lock diagnostics for remediation
-        if: always()
-        shell: bash
-        run: |
-          cargo +1.88.0 fmt --all || true
-          for f in crates/tram-model/src/lib.rs crates/tram-registry/src/lib.rs crates/tram-config/src/lib.rs crates/tram-config/tests/p1_compilation.rs; do
-            echo "TRAM_FORMAT_BEGIN:$f"
-            base64 -w0 "$f" || true
-            echo
-            echo "TRAM_FORMAT_END:$f"
-          done
-          if ! test -f Cargo.lock; then cargo +1.88.0 generate-lockfile; fi
-          if test -f Cargo.lock; then
-            echo TRAM_LOCK_BEGIN
-            base64 -w0 Cargo.lock
-            echo
-            echo TRAM_LOCK_END
-          fi
-          echo TRAM_DEPS_BEGIN
-          cargo +1.88.0 metadata --format-version 1 --locked | python3 -c 'import sys,json; data=json.load(sys.stdin); [print(p["name"],p["version"],p["license"],p["source"]) for p in data["packages"]]' || true
-          echo TRAM_DEPS_END

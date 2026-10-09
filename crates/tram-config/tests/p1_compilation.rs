@@ -241,7 +241,10 @@ fn comp_01_defaults_require_exact_capabilities_and_no_implicit_retries() {
     use tram_registry::{p1_contracts, Registry, Role};
 
     let omitted = GOLDEN.replace("  serializer_out:\n    type: json\n", "");
-    assert!(compile(&omitted).is_ok(), "omitted serializer_out defaults to json");
+    assert!(
+        compile(&omitted).is_ok(),
+        "omitted serializer_out defaults to json"
+    );
     for key in ["  retry_count: 0\n", "  retry_delay_seconds: 0\n"] {
         err_code(&GOLDEN.replace(key, ""), "CONFIG_INVALID_VALUE");
     }
@@ -256,7 +259,10 @@ fn comp_01_defaults_require_exact_capabilities_and_no_implicit_retries() {
         (Role::Transform, "filter", "stateless"),
         (Role::Transform, "drop", "stateless"),
     ] {
-        let mut manifest = supported.select(role, name, operation).expect("built-in manifest").clone();
+        let mut manifest = supported
+            .select(role, name, operation)
+            .expect("built-in manifest")
+            .clone();
         if role == Role::Serializer {
             manifest.operations.remove("encode");
         }

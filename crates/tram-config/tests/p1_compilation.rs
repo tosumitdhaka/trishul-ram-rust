@@ -230,7 +230,7 @@ fn comp_01_rejects_bad_sink_topology_and_unsafe_outputs() {
         "CONFIG_MALFORMED_YAML",
     );
     err_code(
-        &GOLDEN.replace("  sinks:", "  sinks:\n    - type: kafka\n      topic: out"),
+        &GOLDEN.replacen("    - type: local", "    - type: kafka", 1),
         "CONFIG_UNSUPPORTED_PLUGIN",
     );
 }

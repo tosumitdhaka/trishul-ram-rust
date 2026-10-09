@@ -172,7 +172,7 @@ fn key(name: &str) -> Value {
     Value::String(name.to_owned())
 }
 fn get<'a>(map: &'a Mapping, name: &str) -> Option<&'a Value> {
-    map.get(&key(name))
+    map.get(key(name))
 }
 fn required<'a>(map: &'a Mapping, name: &str) -> Result<&'a Value, ConfigError> {
     get(map, name).ok_or_else(|| ConfigError::InvalidValue(name.into()))

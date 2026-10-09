@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           cargo +1.88.0 fmt --all || true
-          for f in crates/tram-model/src/lib.rs crates/tram-registry/src/lib.rs crates/tram-config/src/lib.rs; do
+          for f in crates/tram-model/src/lib.rs crates/tram-registry/src/lib.rs crates/tram-config/src/lib.rs crates/tram-config/tests/p1_compilation.rs; do
             echo "TRAM_FORMAT_BEGIN:$f"
             base64 -w0 "$f" || true
             echo
@@ -55,4 +55,6 @@ jobs:
             echo
             echo TRAM_LOCK_END
           fi
-          cargo +1.88.0 metadata --format-version 1 --locked --no-deps || true
+          echo TRAM_DEPS_BEGIN
+          cargo +1.88.0 metadata --format-version 1 --locked | python3 -c 'import sys,json; data=json.load(sys.stdin); [print(p["name"],p["version"],p["license"],p["source"]) for p in data["packages"]]' || true
+          echo TRAM_DEPS_END

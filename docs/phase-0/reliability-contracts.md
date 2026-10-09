@@ -2,6 +2,10 @@
 
 **Status:** PROPOSED; semantics are design constraints subject to review, not a claim of implemented functionality.
 
+## Phase scope and normative dependency
+
+This document describes the **P2+/P4 production architecture**. The initial P1 implementation is a strictly ephemeral test harness under [P1 safety](p1-safety-boundary.md), and does not claim durable admission, external-effect fencing, source ack/finalize or durable completion. Normative P2+ source-unit/receipt/checkpoint rules are in [source-unit-contract.md](source-unit-contract.md); exact manager/worker state transitions and result semantics are in [attempt-protocol.md](attempt-protocol.md). Bounds and resource accounting are in [resource-budgets.md](resource-budgets.md). Those detailed contracts supersede shorthand below.
+
 ## 1. Truthful outcomes and ownership
 
 Separate **logical run** from execution attempts. Proposed identity tuple:
@@ -22,6 +26,8 @@ Manager owns control-plane intent and attempt/fence ledger; worker owns local du
 
 ## 2. Record disposition and acknowledgement
 
+A source unit is an explicit ackable position, **not** an output record. Completion requires a sealed child/branch obligation graph, every required sink receipt/filter/DLQ disposition terminal, the state/checkpoint persisted and a contiguous cursor barrier. Zero output is an explicit disposition, not vacuous success. Confirmed A/unknown B means the whole unit remains unackable. See [source-unit-contract.md](source-unit-contract.md).
+
 Per-source unit and per-sink branch track **separate obligations**:
 
 | Condition | Permitted disposition | Source ack/finalize? |
@@ -38,6 +44,8 @@ Multi-sink fan-out may be partially delivered; expose *each* sink's result and n
 Delivery contracts are negotiated explicitly: best-effort, at-least-once with replay and confirmed sink, or constrained transactional semantics when supported by specific source/sink pairs. Do not imply stronger guarantees than the weakest participant. UDP SNMP traps are best-effort at ingress; HTTP webhook acceptance is not crash-durable until an actual ingress write is committed.
 
 ## 3. Crash/partition acceptance cases
+
+Every state change requires exact attempt, worker session, plan and monotonic fence checks. Cancellation accepted is distinct from effect quiescence; lease expiry cannot release ownership. See [normative attempt state table](attempt-protocol.md).
 
 | Boundary | Required recovery result |
 |---|---|

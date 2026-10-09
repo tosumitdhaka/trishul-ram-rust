@@ -15,12 +15,22 @@ Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-
 
 ## Phase 0 documents
 
+**Independent review:** `CHANGES_REQUIRED` (review ID 5473153676) on original `96e11006e4784d2e70a7b0663c598c16376b04f7`. The documentation below is a **remediation candidate**, pending exact-SHA re-review; neither architecture approval nor Phase 1 code authorization has been granted. **P1 is an isolated ephemeral test harness, not a production-delivery milestone.**
+
+
 - [System architecture](docs/phase-0/architecture.md)
 - [Plugin and data model contracts](docs/phase-0/plugin-contracts.md)
 - [Reliability, delivery, security and operations](docs/phase-0/reliability-contracts.md)
-- [Migration scope, gates and open decisions](docs/phase-0/migration-plan.md)
+- [Migration scope, gates and review record](docs/phase-0/migration-plan.md)
+- [P1 ephemeral safety boundary](docs/phase-0/p1-safety-boundary.md)
+- [Source-unit lineage and acknowledgement](docs/phase-0/source-unit-contract.md)
+- [Attempt/worker authority state machine](docs/phase-0/attempt-protocol.md)
+- [P1 Python compatibility matrix + fixtures](docs/phase-0/p1-compatibility-matrix.md)
+- [P1 resource accounting](docs/phase-0/resource-budgets.md)
+- [Architecture decision register D01–D12](docs/phase-0/decision-register.md)
+- [Independent-review remediation map](docs/phase-0/review-remediation.md)
 
-**Proposed initial vertical slice:** local source + local sink + JSON serializer + a few stateless transforms, exercising the full registry, pipeline engine and failure semantics. Next add native SNMP polling, walks and traps. Then complete standalone orchestration and manager–worker deployment through the same engine.
+**Proposed initial vertical slice:** ephemeral read-only local source + scratch-only local sink + JSON serializer + a few stateless transforms, exercising the registry and engine in a test harness without durable source acknowledgement or production publication. Next add native SNMP polling, walks and traps. Then complete standalone orchestration and manager–worker deployment through the same engine.
 
 ## References
 

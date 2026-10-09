@@ -3,6 +3,10 @@
 **Status:** PROPOSED / Phase 0 / requires independent design review; not frozen.
 **Reference pins for this assessment:** Python `tosumitdhaka/trishul-ram@ff380725b86c9569901ea89ad6771623847cc4e2` (documentation-only successor to released v1.8.0); Rust SNMP `tosumitdhaka/trishul-snmp-rust@bef2b7643dddd4c28326febe9e310575110b6f4b` (`trishul-snmp` 0.1.1). Revalidate live heads before subsequent gates.
 
+## Normative phase boundary and review precedence
+
+The original P0 review returned `CHANGES_REQUIRED`. This revised package remains **PROPOSED**. Normative constraints are fully enumerated in [P1 safety](p1-safety-boundary.md), [source-unit obligations](source-unit-contract.md), [attempt authority](attempt-protocol.md), [compatibility matrix](p1-compatibility-matrix.md), [resource budgets](resource-budgets.md) and [decision register](decision-register.md). Where an earlier generic architecture sentence appears to require a worker journal for P1, **P1 is expressly non-production ephemeral-only** and cannot perform final publication/source acknowledgement. The durable-before-effect invariant becomes mandatory for P2+.
+
 ## 1. Purpose, principles, exclusions
 
 Build an idiomatic, secure, resource-bounded, observable Rust pipeline system with **equivalent intended telecom mediation features** to Python TRAM over time. This is **not** a line-by-line translation, an obligation to preserve internal Python behavior, or a mandate to ship all connectors before the core. Existing documentation, tests and production workflows are *evidence* and candidates for compatibility oracles, not permission to propagate documented defects.
@@ -94,13 +98,13 @@ Names and exact crate splits are proposed, not frozen. Avoid excessive micro-cra
 
 1. Config is parsed into a **versioned, normalized plan**; plugin-specific configuration validates before any effects.
 2. Registry resolves exact plugin names/versions and capabilities; admission checks supported formats, stream/batch mode, acknowledgement tiers, ordering, durable state and resource budgets.
-3. Control plane durably records run intent/attempt identity and obtains an execution fence before dispatch.
-4. Worker durably reserves an authorized attempt before starting side effects. Repeated delivery of the same valid attempt is idempotent.
+3. **P2+ only:** Control plane durably records run intent/attempt identity and obtains an execution fence before dispatch. P1 instead validates its read-only source/scratch-only sink and creates a unique ephemeral test-run capability, with no durable or external authority.
+4. **P2+ only:** Worker durably reserves an authorized attempt before side effects, with exact fence/session/plan checks and idempotent replay. P1 permits only isolated scratch effects, with no remote admission or durability claim.
 5. Source emits bounded `IngressItem`s (raw bytes or native structured events) with metadata and an optional acknowledgement cursor.
 6. Decoder yields typed records. Global transforms run with per-record failure isolation; sink branches use **independent logical record views** (copy-on-write or equivalent).
 7. Sink predicates, branch transforms, serializer and sink write/flush produce explicit per-sink outcomes. Confirmed output, filter, explicit drop and successfully retained DLQ are distinguishable.
-8. Source acknowledgement/finalization occurs only after the applicable outcome/checkpoint obligations are met. A timeout or unknown sink response remains **uncertain**, never silently a success.
-9. Completion and replayable outbox receipt are persisted together; manager reconciles by exact attempt identity.
+8. **P2+ only:** Source acknowledgement/finalization occurs only after the applicable outcome/checkpoint obligations are met. **P1 never acknowledges or destructively finalizes.** A timeout or unknown sink response remains **uncertain**, never silently a success.
+9. **P2+ only:** Completion and replayable outbox receipt are persisted together; manager reconciles by exact attempt identity. P1 statuses are ephemeral and have no replay/outbox.
 10. Stop/drain coordinates admission closure, source cancellation, in-flight work, flush deadlines and truthful terminal state.
 
 **Do not claim exactly-once delivery** across arbitrary external sources/sinks. In particular, a fencing token cannot undo a previously executed external write, and UDP notifications offer no sender acknowledgement.
@@ -129,6 +133,8 @@ Names and exact crate splits are proposed, not frozen. Avoid excessive micro-cra
 - Plugin boundaries are **trusted native code** at first, not arbitrary untrusted user code; multi-tenant sandboxes/WASM are later designs.
 
 ## 8. Architecture review gates
+
+The blocking review (P0-R1..R6) is addressed by the [finding map](review-remediation.md); none of these edits constitute an approved freeze. D01–D12 disposition proposals are now in [decision-register.md](decision-register.md), with explicit phase boundaries and re-entry gates.
 
 Design approval requires review of: shared-topology invariants; execution lifecycle; ack/commit contract; journal/fencing/crash recovery; plugin capabilities; source/record/serializer compatibility; auth; bounded memory and overload behavior; native SNMP role; deployment upgrade/rollback. No crate implementation is authorized merely because this proposal was committed.
 

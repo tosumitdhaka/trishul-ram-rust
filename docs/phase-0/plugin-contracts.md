@@ -2,6 +2,10 @@
 
 **Status:** PROPOSED; interfaces below express required semantics, not compilable production Rust trait definitions.
 
+## P1 scope clarification
+
+P1 is an **isolated read-only-source/scratch-output, ephemeral-only test harness**, with no production output publication, source ack, durable result, external network or arbitrary filesystem access. The concrete supported YAML is [the P1 compatibility matrix](p1-compatibility-matrix.md), whose fixture is binding for proposed semantic test expectations. The example farther below is **illustrative architecture notation only**, not a supported YAML contract. Strict resource admission and typed failure semantics: [resource budgets](resource-budgets.md). Lineage and future durable receipts: [source unit contract](source-unit-contract.md).
+
 ## 1. Registry before catalog
 
 Four public plugin *roles* are mandatory even if initial implementations are few:
@@ -102,6 +106,8 @@ TransformCapabilities:
 Terms are provisional and need precise codec-specific interpretations. The planner rejects any requested delivery contract that no end-to-end path can support. A sink returning `accepted` into a buffer is not automatically `confirmed`.
 
 ## 5. Initial plugin implementations and test strategy
+
+The P1 local sink is **scratch-only** and cannot implement `fsynced_local`/durable confirmation; the P2 local sink adds idempotent persistent staging+publication+fsync and source checkpoint barrier after architecture-specific tests. The P1 parser must reject unsupported Python options before any I/O, not silently accept default production sink settings.
 
 **First vertical slice (engine proof, not feature-complete product):**
 - Local file source and local file sink, with staged finalization behavior.

@@ -2,6 +2,10 @@
 
 **Status:** PROPOSED, not approved or frozen. **Purpose:** reviewable scope and measurable gates, not a promise of delivery dates.
 
+## Independent review remediation in this revision
+
+The original `96e11006e4784d2e70a7b0663c598c16376b04f7` received `CHANGES_REQUIRED` (GitHub review ID `5473153676`, P0-R1 through P0-R6). These are documentation-only remediation proposals for exact-SHA re-review; no architecture approval is asserted. Binding details are linked in the [finding-to-file map](review-remediation.md).
+
 ## 1. Evidence pins and source hierarchy
 
 Sources inspected for this proposal:
@@ -29,8 +33,8 @@ Do not imply all 24 source, 20 sink, 12 serializer and 29 transform plugins in P
 | Gate | Target | Evidence to exit |
 |---|---|---|
 | **P0 / Design** | Architecture, identities, persistence, plugin traits, plan schema/validation, delivery contract, SNMP adapter, resource/security defaults and baseline matrix | Independent ARCHITECTURE_REVIEW_APPROVED (or CHANGES_REQUIRED); open blockers resolved; no code required |
-| **P1 / Core proof** | Rust workspace, typed values, registry, compiler, engine, JSON, local source/sink, four simple transforms, branch fan-out | Build/clippy/fmt; deterministic fixtures, bad input, multi-sink isolation, failed sink, bounded queues |
-| **P2 / Standalone** | Native CLI, scheduling, control ledger, embedded worker, health/API, journal, cancellation/drain, persistence | Restart/crash/replay and lifecycle tests in real OS processes; correct output and ack evidence |
+| **P1 / Ephemeral core proof** | Registry, typed values, strict compiler, read-only local source + scratch-only local sink, JSON, four transforms and fan-out. **No durable admission, ack, final publication, network listener or production delivery claim**. | Python-oracle compare + pinned fixtures; build/clippy/fmt; read-only/scratch path confinement, crash leaves input untouched, branch isolation, P1 resource bounds |
+| **P2 / Durable standalone** | Native control ledger + separate durable worker admission/completion/outbox journal, identity-fenced attempts, idempotent local staged publication, checkpoint/ack frontier, cancellation/drain, scheduling/API | Real OS crash/restart/fault tests before any production-enabled effect; confirmed publication, journal/outbox atomicity and source-finalize order |
 | **P3 / SNMP** | Rust `trishul-snmp` adapter for polling, trap receive and MIB enrichment; trap sink as separate gated capability | v1/v2c/v3 live wire, credential rejection, malformed trap/Counter64, burst/drop and cancellation gates |
 | **P4 / Distributed** | Same engine over versioned private transport, manager/worker placement, capability routing, fencing, journal/outbox, recovery and rollout | Mixed worker failure/partition tests; old attempt cannot win; no unsupported placement; resource-bounded canary |
 | **P5 / Catalog growth** | Kafka, REST/webhook, SFTP, stateful transforms, formats, remaining prioritized connectors | One plugin/version per acceptance matrix and live failure profile; no false durability claims |
@@ -49,6 +53,8 @@ These are dependency/acceptance stages, **not** a release timeline. SNMP adapter
 - Validate with real standalone and distributed deployment topology, Linux containers and Kubernetes profiles as scope matures.
 
 ## 5. Deliberate decisions to review before implementation
+
+**D01–D12 now have explicit recommended ACCEPT/DEFER dispositions** with owner, binding semantics, phase applicability and mandatory re-entry gates in [decision-register.md](decision-register.md). They are proposals until independent review and project-owner Phase 0 approval. The earlier question table below remains a historical checklist and **is not** a second unresolved decision authority.
 
 | ID | Proposed default | Review question |
 |---|---|---|
@@ -69,8 +75,8 @@ These are dependency/acceptance stages, **not** a release timeline. SNMP adapter
 
 - [ ] Independent architecture review performed against pinned references.
 - [ ] Source-derived contracts separated from proposed Rust changes.
-- [ ] Agreement on external compatibility matrix, deprecations and import strategy.
-- [ ] Registry traits, state/ack identity semantics and the first vertical slice reviewed.
+- [ ] Independent review of proposed [P1 compatibility matrix and pinned goldens](p1-compatibility-matrix.md), intentional P1 subset/deviations and deferred imports.
+- [ ] Registry traits, [lineage/ack barrier](source-unit-contract.md), [attempt authority table](attempt-protocol.md) and the [P1 ephemeral slice](p1-safety-boundary.md) reviewed.
 - [ ] Standalone/distributed same-engine design and failure boundaries accepted.
 - [ ] Typed value, secrets/security and resource-budget policy accepted.
 - [ ] SNMP library version/MIB boundary and test plan accepted.

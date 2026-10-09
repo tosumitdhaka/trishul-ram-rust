@@ -417,7 +417,9 @@ mod tests {
         let mut candidate = Fake::manifest();
         assert_eq!(candidate.constraints.max_batch, P1_REQUIRED_BATCH_CAPACITY);
         let mut valid = Registry::new();
-        valid.register(candidate.clone()).expect("valid P1 manifest");
+        valid
+            .register(candidate.clone())
+            .expect("valid P1 manifest");
         assert!(valid.select(Role::Source, "fake", "read").is_ok());
         assert!(matches!(
             valid.select(Role::Source, "fake", "wrong"),
@@ -426,7 +428,9 @@ mod tests {
 
         candidate.constraints.can_cancel = false;
         let mut no_cancel = Registry::new();
-        no_cancel.register(candidate.clone()).expect("schema legal but non-P1");
+        no_cancel
+            .register(candidate.clone())
+            .expect("schema legal but non-P1");
         assert!(matches!(
             no_cancel.select(Role::Source, "fake", "read"),
             Err(RegistryError::UnsupportedOperation { .. })
@@ -435,14 +439,19 @@ mod tests {
 
         candidate.constraints.max_batch = P1_REQUIRED_BATCH_CAPACITY - 1;
         let mut too_small = Registry::new();
-        too_small.register(candidate.clone()).expect("nonzero declared capacity");
+        too_small
+            .register(candidate.clone())
+            .expect("nonzero declared capacity");
         assert!(matches!(
             too_small.select(Role::Source, "fake", "read"),
             Err(RegistryError::UnsupportedOperation { .. })
         ));
         candidate.constraints.max_batch = 0;
         assert_eq!(candidate.validate(), Err(RegistryError::InvalidManifest));
-        assert_eq!(Registry::new().register(candidate.clone()), Err(RegistryError::InvalidManifest));
+        assert_eq!(
+            Registry::new().register(candidate.clone()),
+            Err(RegistryError::InvalidManifest)
+        );
         candidate.constraints.max_batch = P1_REQUIRED_BATCH_CAPACITY;
         let mut at_boundary = Registry::new();
         at_boundary.register(candidate).expect("valid boundary");

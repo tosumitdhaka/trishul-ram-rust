@@ -84,9 +84,15 @@ impl Timestamp {
             offset_seconds,
         })
     }
-    pub fn unix_seconds(&self) -> i64 { self.unix_seconds }
-    pub fn nanos(&self) -> u32 { self.nanos }
-    pub fn offset_seconds(&self) -> i32 { self.offset_seconds }
+    pub fn unix_seconds(&self) -> i64 {
+        self.unix_seconds
+    }
+    pub fn nanos(&self) -> u32 {
+        self.nanos
+    }
+    pub fn offset_seconds(&self) -> i32 {
+        self.offset_seconds
+    }
 }
 
 fn canonical_integer(text: &str) -> bool {
@@ -112,10 +118,14 @@ pub struct ValidatedBigInteger(String);
 impl ValidatedBigInteger {
     pub fn new(value: impl Into<String>) -> Result<Self, ModelError> {
         let value = value.into();
-        if !canonical_integer(&value) { return Err(ModelError::InvalidNumber); }
+        if !canonical_integer(&value) {
+            return Err(ModelError::InvalidNumber);
+        }
         Ok(Self(value))
     }
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 /// Validated exact decimal, preserving input scale without float conversion.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -123,20 +133,28 @@ pub struct ValidatedDecimal(String);
 impl ValidatedDecimal {
     pub fn new(value: impl Into<String>) -> Result<Self, ModelError> {
         let value = value.into();
-        if !canonical_decimal(&value) { return Err(ModelError::InvalidNumber); }
+        if !canonical_decimal(&value) {
+            return Err(ModelError::InvalidNumber);
+        }
         Ok(Self(value))
     }
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 /// Finite IEEE-754 float; NaN and both infinities are unrepresentable in safe APIs.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FiniteFloat(f64);
 impl FiniteFloat {
     pub fn new(value: f64) -> Result<Self, ModelError> {
-        if !value.is_finite() { return Err(ModelError::NonFiniteFloat); }
+        if !value.is_finite() {
+            return Err(ModelError::NonFiniteFloat);
+        }
         Ok(Self(value))
     }
-    pub fn get(self) -> f64 { self.0 }
+    pub fn get(self) -> f64 {
+        self.0
+    }
 }
 /// Owned numbers prevent precision loss through f64 intermediate values.
 ///
@@ -348,7 +366,12 @@ mod tests {
     fn exact_representation_and_unsupported_coercion() {
         assert_eq!(Datum::bigint("01"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::bigint("-0"), Err(ModelError::InvalidNumber));
-        assert_eq!(Datum::decimal("1.20"), Ok(Datum::Decimal(ValidatedDecimal::new("1.20").expect("decimal"))));
+        assert_eq!(
+            Datum::decimal("1.20"),
+            Ok(Datum::Decimal(
+                ValidatedDecimal::new("1.20").expect("decimal")
+            ))
+        );
         assert_eq!(Datum::decimal("1..20"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::float(f64::NAN), Err(ModelError::NonFiniteFloat));
         assert!(matches!(
@@ -394,7 +417,10 @@ mod tests {
     #[test]
     fn f4_invalid_numeric_scalars_cannot_enter_canonical_variants() {
         for bad in ["", "abc", "+1", "00", "-0", "1.1"] {
-            assert_eq!(ValidatedBigInteger::new(bad), Err(ModelError::InvalidNumber));
+            assert_eq!(
+                ValidatedBigInteger::new(bad),
+                Err(ModelError::InvalidNumber)
+            );
         }
         for bad in ["", "nan", "01", "1.", "1..2", "1e6"] {
             assert_eq!(ValidatedDecimal::new(bad), Err(ModelError::InvalidNumber));
@@ -403,15 +429,30 @@ mod tests {
             assert_eq!(FiniteFloat::new(bad), Err(ModelError::NonFiniteFloat));
             assert_eq!(Datum::float(bad), Err(ModelError::NonFiniteFloat));
         }
-        assert_eq!(ValidatedDecimal::new("1.200").expect("scale").as_str(), "1.200");
-        assert_eq!(ValidatedBigInteger::new("-100").expect("integer").as_str(), "-100");
+        assert_eq!(
+            ValidatedDecimal::new("1.200").expect("scale").as_str(),
+            "1.200"
+        );
+        assert_eq!(
+            ValidatedBigInteger::new("-100").expect("integer").as_str(),
+            "-100"
+        );
         assert_eq!(FiniteFloat::new(1.5).expect("float").get(), 1.5);
     }
     #[test]
     fn f4_timestamp_components_are_only_available_through_checked_construction() {
-        assert_eq!(Timestamp::new(0, 1_000_000_000, 0), Err(ModelError::InvalidTimestamp));
-        assert_eq!(Timestamp::new(0, 0, 86_401), Err(ModelError::InvalidTimestamp));
-        assert_eq!(Timestamp::new(0, 0, -86_401), Err(ModelError::InvalidTimestamp));
+        assert_eq!(
+            Timestamp::new(0, 1_000_000_000, 0),
+            Err(ModelError::InvalidTimestamp)
+        );
+        assert_eq!(
+            Timestamp::new(0, 0, 86_401),
+            Err(ModelError::InvalidTimestamp)
+        );
+        assert_eq!(
+            Timestamp::new(0, 0, -86_401),
+            Err(ModelError::InvalidTimestamp)
+        );
         let time = Timestamp::new(i64::MIN, 999_999_999, -86_400).expect("valid");
         assert_eq!(time.unix_seconds(), i64::MIN);
         assert_eq!(time.nanos(), 999_999_999);
@@ -420,7 +461,8 @@ mod tests {
     #[test]
     fn f4_nested_canonical_collections_and_envelope_metadata_preserve_branch_isolation() {
         let nested = Datum::Object(BTreeMap::from([(
-            "items".into(), Datum::Array(vec![
+            "items".into(),
+            Datum::Array(vec![
                 Datum::bigint("18446744073709551616").expect("exact bigint"),
                 Datum::decimal("0.00001").expect("exact decimal"),
                 Datum::float(f64::MIN_POSITIVE).expect("finite"),
@@ -436,6 +478,14 @@ mod tests {
         assert_eq!(envelope.metadata.len(), 1);
         assert_eq!(branch.metadata.len(), 2);
         assert!(matches!(envelope.data.get("root"), Some(Datum::Object(_))));
-        assert_eq!(envelope.provenance.ingested_at.as_ref().expect("time").nanos(), 20);
+        assert_eq!(
+            envelope
+                .provenance
+                .ingested_at
+                .as_ref()
+                .expect("time")
+                .nanos(),
+            20
+        );
     }
 }

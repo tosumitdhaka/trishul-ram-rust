@@ -294,14 +294,28 @@ retry_delay_seconds: 0
     let one_seq = "sinks:\n  - {type: local, path: /scratch/a, file_mode: single, overwrite: false, filename_template: a.json}";
     let two_seq = format!("{one_seq}\n  - {{type: local, path: /scratch/b, file_mode: single, overwrite: false, filename_template: b.json}}");
     assert_eq!(compile(single).expect("singular mapping").sinks.len(), 1);
-    assert_eq!(compile(&single.replace(one_map, one_seq)).expect("plural one").sinks.len(), 1);
-    assert_eq!(compile(&single.replace(one_map, &two_seq)).expect("plural two").sinks.len(), 2);
     assert_eq!(
-        compile(&single.replace("sink:", "sinks:")).unwrap_err().code(),
+        compile(&single.replace(one_map, one_seq))
+            .expect("plural one")
+            .sinks
+            .len(),
+        1
+    );
+    assert_eq!(
+        compile(&single.replace(one_map, &two_seq))
+            .expect("plural two")
+            .sinks
+            .len(),
+        2
+    );
+    assert_eq!(
+        compile(&single.replace("sink:", "sinks:"))
+            .unwrap_err()
+            .code(),
         "CONFIG_INVALID_VALUE"
     );
     assert_eq!(
-        compile(&single.replace(one_map, &format!("sink:\n  - {{type: local, path: /scratch/a, file_mode: single, overwrite: false, filename_template: a.json}}"))).unwrap_err().code(),
+        compile(&single.replace(one_map, "sink:\n  - {type: local, path: /scratch/a, file_mode: single, overwrite: false, filename_template: a.json}")).unwrap_err().code(),
         "CONFIG_INVALID_VALUE"
     );
     for invalid in [
@@ -313,10 +327,15 @@ retry_delay_seconds: 0
         "sinks: [{}, {}, {}]",
         "sinks: [{type: local}, false]",
     ] {
-        assert!(compile(&single.replace(one_map, invalid)).is_err(), "{invalid}");
+        assert!(
+            compile(&single.replace(one_map, invalid)).is_err(),
+            "{invalid}"
+        );
     }
     assert_eq!(
-        compile(&single.replace(one_map, &format!("{one_map}\n{one_seq}"))).unwrap_err().code(),
+        compile(&single.replace(one_map, &format!("{one_map}\n{one_seq}")))
+            .unwrap_err()
+            .code(),
         "CONFIG_UNSUPPORTED_OPTION"
     );
 }
@@ -338,11 +357,22 @@ fn f2_expr_text(input: &str, branch: bool) -> tram_config::Expression {
 fn f2_field(s: &str) -> tram_config::Expression {
     tram_config::Expression::Field(s.into())
 }
-fn f2_bin(op: tram_config::BinaryOp, a: tram_config::Expression, b: tram_config::Expression) -> tram_config::Expression {
-    tram_config::Expression::Binary { op, left: Box::new(a), right: Box::new(b) }
+fn f2_bin(
+    op: tram_config::BinaryOp,
+    a: tram_config::Expression,
+    b: tram_config::Expression,
+) -> tram_config::Expression {
+    tram_config::Expression::Binary {
+        op,
+        left: Box::new(a),
+        right: Box::new(b),
+    }
 }
 fn f2_not(a: tram_config::Expression) -> tram_config::Expression {
-    tram_config::Expression::Unary { op: tram_config::UnaryOp::Not, expr: Box::new(a) }
+    tram_config::Expression::Unary {
+        op: tram_config::UnaryOp::Not,
+        expr: Box::new(a),
+    }
 }
 #[test]
 fn f2_python_not_comparison_and_boolean_precedence_has_exact_ast() {
@@ -350,23 +380,47 @@ fn f2_python_not_comparison_and_boolean_precedence_has_exact_ast() {
     use tram_model::Datum;
     let ge = f2_bin(B::Ge, f2_field("metric"), E::Literal(Datum::Signed(10)));
     assert_eq!(f2_expr_text("not metric >= 10", true), f2_not(ge.clone()));
-    assert_eq!(f2_expr_text("not (metric >= 10)", false), f2_not(ge.clone()));
-    assert_eq!(f2_expr_text("not a and b", false), f2_bin(B::And, f2_not(f2_field("a")), f2_field("b")));
-    assert_eq!(f2_expr_text("a or not b", true), f2_bin(B::Or, f2_field("a"), f2_not(f2_field("b"))));
+    assert_eq!(
+        f2_expr_text("not (metric >= 10)", false),
+        f2_not(ge.clone())
+    );
+    assert_eq!(
+        f2_expr_text("not a and b", false),
+        f2_bin(B::And, f2_not(f2_field("a")), f2_field("b"))
+    );
+    assert_eq!(
+        f2_expr_text("a or not b", true),
+        f2_bin(B::Or, f2_field("a"), f2_not(f2_field("b")))
+    );
     let eq = f2_bin(B::Eq, f2_field("a"), f2_field("b"));
     assert_eq!(f2_expr_text("not a == b", false), f2_not(eq));
-    assert_eq!(f2_expr_text("(not a) == b", false), f2_bin(B::Eq, f2_not(f2_field("a")), f2_field("b")));
+    assert_eq!(
+        f2_expr_text("(not a) == b", false),
+        f2_bin(B::Eq, f2_not(f2_field("a")), f2_field("b"))
+    );
     assert_eq!(
         f2_expr_text("not a or b and c", false),
-        f2_bin(B::Or, f2_not(f2_field("a")), f2_bin(B::And, f2_field("b"), f2_field("c")))
+        f2_bin(
+            B::Or,
+            f2_not(f2_field("a")),
+            f2_bin(B::And, f2_field("b"), f2_field("c"))
+        )
     );
     assert_eq!(
         f2_expr_text("not (a or b) and c", true),
-        f2_bin(B::And, f2_not(f2_bin(B::Or, f2_field("a"), f2_field("b"))), f2_field("c"))
+        f2_bin(
+            B::And,
+            f2_not(f2_bin(B::Or, f2_field("a"), f2_field("b"))),
+            f2_field("c")
+        )
     );
     assert_eq!(
         f2_expr_text("not a + 1 >= 10", false),
-        f2_not(f2_bin(B::Ge, f2_bin(B::Add, f2_field("a"), E::Literal(Datum::Signed(1))), E::Literal(Datum::Signed(10))))
+        f2_not(f2_bin(
+            B::Ge,
+            f2_bin(B::Add, f2_field("a"), E::Literal(Datum::Signed(1))),
+            E::Literal(Datum::Signed(10))
+        ))
     );
 }
 #[test]
@@ -387,7 +441,10 @@ fn f3_compilation_rejects_injected_manifest_without_cancel_or_batch_capacity() {
         for violation in ["cancel", "capacity"] {
             let mut injected = Registry::new();
             for (index, (role, name, operation)) in fixtures.iter().enumerate() {
-                let mut manifest = original.select(*role, name, operation).expect("manifest").clone();
+                let mut manifest = original
+                    .select(*role, name, operation)
+                    .expect("manifest")
+                    .clone();
                 if index == target {
                     if violation == "cancel" {
                         manifest.constraints.can_cancel = false;
@@ -395,7 +452,9 @@ fn f3_compilation_rejects_injected_manifest_without_cancel_or_batch_capacity() {
                         manifest.constraints.max_batch = P1_REQUIRED_BATCH_CAPACITY - 1;
                     }
                 }
-                injected.register(manifest).expect("nonzero capacity registers");
+                injected
+                    .register(manifest)
+                    .expect("nonzero capacity registers");
             }
             assert_eq!(
                 compile_p1(GOLDEN, &vars(), &injected).unwrap_err().code(),

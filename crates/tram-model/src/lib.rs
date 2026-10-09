@@ -83,7 +83,6 @@ fn canonical_decimal(text: &str) -> bool {
         canonical_integer(whole)
             && !fraction.is_empty()
             && fraction.bytes().all(|b| b.is_ascii_digit())
-            && !fraction.ends_with('0')
     } else {
         canonical_integer(text)
     }
@@ -258,7 +257,8 @@ mod tests {
     fn exact_representation_and_unsupported_coercion() {
         assert_eq!(Datum::bigint("01"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::bigint("-0"), Err(ModelError::InvalidNumber));
-        assert_eq!(Datum::decimal("1.20"), Err(ModelError::InvalidNumber));
+        assert_eq!(Datum::decimal("1.20"), Ok(Datum::Decimal("1.20".into())));
+        assert_eq!(Datum::decimal("1..20"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::float(f64::NAN), Err(ModelError::NonFiniteFloat));
         assert!(matches!(Datum::Bytes(vec![0xff]).as_string(),
             Err(ModelError::UnsupportedConversion { .. })));

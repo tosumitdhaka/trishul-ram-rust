@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+name: P1 Round 1 bounded validation
+on:
+  push:
+    branches: [phase/p1-ephemeral-core]
+  pull_request:
+    branches: [design/phase-0-architecture]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+      - name: Format check
+        run: cargo +1.88.0 fmt --all -- --check
+      - name: Clippy strict
+        if: always()
+        run: cargo +1.88.0 clippy --workspace --all-targets -- -D warnings
+      - name: Workspace tests
+        if: always()
+        run: cargo +1.88.0 test --workspace
+      - name: Toolchain and lockfile diagnostic
+        if: always()
+        run: |
+          rustc +1.88.0 --version
+          cargo +1.88.0 --version
+          if test -f Cargo.lock; then cat Cargo.lock; else echo "Cargo.lock absent"; fi

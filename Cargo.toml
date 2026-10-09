@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+[workspace]
+resolver = "2"
+members = ["crates/tram-model", "crates/tram-registry", "crates/tram-config", "crates/tram-engine", "crates/tram-testkit"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

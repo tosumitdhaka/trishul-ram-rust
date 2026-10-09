@@ -13,7 +13,10 @@ pub enum ModelError {
     NumericOverflow,
     NonFiniteFloat,
     InvalidTimestamp,
-    UnsupportedConversion { from: &'static str, to: &'static str },
+    UnsupportedConversion {
+        from: &'static str,
+        to: &'static str,
+    },
 }
 
 impl fmt::Display for ModelError {
@@ -44,7 +47,9 @@ macro_rules! identity {
                 }
                 Ok(Self(value))
             }
-            pub fn as_str(&self) -> &str { &self.0 }
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
         }
     };
 }
@@ -67,7 +72,11 @@ impl Timestamp {
         if nanos >= 1_000_000_000 || !(-86_400..=86_400).contains(&offset_seconds) {
             return Err(ModelError::InvalidTimestamp);
         }
-        Ok(Self { unix_seconds, nanos, offset_seconds })
+        Ok(Self {
+            unix_seconds,
+            nanos,
+            offset_seconds,
+        })
     }
 }
 
@@ -107,16 +116,22 @@ pub enum Datum {
 impl Datum {
     pub fn bigint(text: impl Into<String>) -> Result<Self, ModelError> {
         let text = text.into();
-        if !canonical_integer(&text) { return Err(ModelError::InvalidNumber); }
+        if !canonical_integer(&text) {
+            return Err(ModelError::InvalidNumber);
+        }
         Ok(Self::BigInteger(text))
     }
     pub fn decimal(text: impl Into<String>) -> Result<Self, ModelError> {
         let text = text.into();
-        if !canonical_decimal(&text) { return Err(ModelError::InvalidNumber); }
+        if !canonical_decimal(&text) {
+            return Err(ModelError::InvalidNumber);
+        }
         Ok(Self::Decimal(text))
     }
     pub fn float(value: f64) -> Result<Self, ModelError> {
-        if !value.is_finite() { return Err(ModelError::NonFiniteFloat); }
+        if !value.is_finite() {
+            return Err(ModelError::NonFiniteFloat);
+        }
         Ok(Self::Float(value))
     }
     pub fn kind(&self) -> &'static str {
@@ -140,7 +155,10 @@ impl Datum {
             Self::Signed(x) => Ok(*x),
             Self::Unsigned(x) => i64::try_from(*x).map_err(|_| ModelError::NumericOverflow),
             Self::BigInteger(x) => x.parse().map_err(|_| ModelError::NumericOverflow),
-            _ => Err(ModelError::UnsupportedConversion { from: self.kind(), to: "i64" }),
+            _ => Err(ModelError::UnsupportedConversion {
+                from: self.kind(),
+                to: "i64",
+            }),
         }
     }
     pub fn to_u64_exact(&self) -> Result<u64, ModelError> {
@@ -148,14 +166,20 @@ impl Datum {
             Self::Unsigned(x) => Ok(*x),
             Self::Signed(x) => u64::try_from(*x).map_err(|_| ModelError::NumericOverflow),
             Self::BigInteger(x) => x.parse().map_err(|_| ModelError::NumericOverflow),
-            _ => Err(ModelError::UnsupportedConversion { from: self.kind(), to: "u64" }),
+            _ => Err(ModelError::UnsupportedConversion {
+                from: self.kind(),
+                to: "u64",
+            }),
         }
     }
     /// No implicit float, byte-to-string or timestamp-to-string coercion.
     pub fn as_string(&self) -> Result<&str, ModelError> {
         match self {
             Self::String(x) => Ok(x),
-            _ => Err(ModelError::UnsupportedConversion { from: self.kind(), to: "string" }),
+            _ => Err(ModelError::UnsupportedConversion {
+                from: self.kind(),
+                to: "string",
+            }),
         }
     }
 }
@@ -201,7 +225,11 @@ impl RecordEnvelope {
             data: BTreeMap::new(),
             metadata: BTreeMap::new(),
             provenance,
-            lineage: Lineage { original_record, parent_record: None, branch: None },
+            lineage: Lineage {
+                original_record,
+                parent_record: None,
+                branch: None,
+            },
             source_position: None,
             raw_source_payload: None,
         }
@@ -250,7 +278,10 @@ mod tests {
         assert_eq!(value.to_i64_exact(), Err(ModelError::NumericOverflow));
         let big = Datum::bigint("18446744073709551616").expect("valid large integer");
         assert_eq!(big.to_u64_exact(), Err(ModelError::NumericOverflow));
-        assert_eq!(Datum::Signed(-1).to_u64_exact(), Err(ModelError::NumericOverflow));
+        assert_eq!(
+            Datum::Signed(-1).to_u64_exact(),
+            Err(ModelError::NumericOverflow)
+        );
     }
 
     #[test]
@@ -260,18 +291,26 @@ mod tests {
         assert_eq!(Datum::decimal("1.20"), Ok(Datum::Decimal("1.20".into())));
         assert_eq!(Datum::decimal("1..20"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::float(f64::NAN), Err(ModelError::NonFiniteFloat));
-        assert!(matches!(Datum::Bytes(vec![0xff]).as_string(),
-            Err(ModelError::UnsupportedConversion { .. })));
-        assert!(matches!(Datum::Boolean(true).to_i64_exact(),
-            Err(ModelError::UnsupportedConversion { .. })));
+        assert!(matches!(
+            Datum::Bytes(vec![0xff]).as_string(),
+            Err(ModelError::UnsupportedConversion { .. })
+        ));
+        assert!(matches!(
+            Datum::Boolean(true).to_i64_exact(),
+            Err(ModelError::UnsupportedConversion { .. })
+        ));
     }
 
     #[test]
     fn deep_nested_values_and_branch_isolation() {
         let mut original = record();
-        original.data.insert("nested".into(), Datum::Object(BTreeMap::from([
-            ("array".into(), Datum::Array(vec![Datum::Bytes(vec![1, 2, 3])]))
-        ])));
+        original.data.insert(
+            "nested".into(),
+            Datum::Object(BTreeMap::from([(
+                "array".into(),
+                Datum::Array(vec![Datum::Bytes(vec![1, 2, 3])]),
+            )])),
+        );
         original.raw_source_payload = Some(vec![1, 2, 3]);
         let mut a = original.fork_for_branch(BranchId::new("A").expect("valid branch"));
         let b = original.fork_for_branch(BranchId::new("B").expect("valid branch"));

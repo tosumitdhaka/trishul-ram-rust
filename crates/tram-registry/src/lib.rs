@@ -9,13 +9,29 @@ use std::fmt;
 pub const CONTRACT_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum Role { Source, Sink, Serializer, Transform }
+pub enum Role {
+    Source,
+    Sink,
+    Serializer,
+    Transform,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConfigType { String, Boolean, Integer, Mapping, Sequence, Null }
+pub enum ConfigType {
+    String,
+    Boolean,
+    Integer,
+    Mapping,
+    Sequence,
+    Null,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AcknowledgementTier { None, LocalEphemeral, DurableConfirmed }
+pub enum AcknowledgementTier {
+    None,
+    LocalEphemeral,
+    DurableConfirmed,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Constraints {
@@ -30,8 +46,11 @@ pub struct Constraints {
 impl Constraints {
     pub fn p1_ephemeral() -> Self {
         Self {
-            manual_batch: true, streaming: false, max_batch: 4096,
-            can_cancel: true, acknowledges_source: false,
+            manual_batch: true,
+            streaming: false,
+            max_batch: 4096,
+            can_cancel: true,
+            acknowledges_source: false,
             confirmation: AcknowledgementTier::LocalEphemeral,
             needs_network: false,
         }
@@ -53,9 +72,19 @@ pub struct Manifest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
     InvalidManifest,
-    DuplicateIdentity { role: Role, name: String },
-    UnknownPlugin { role: Role, name: String },
-    UnsupportedOperation { role: Role, name: String, operation: String },
+    DuplicateIdentity {
+        role: Role,
+        name: String,
+    },
+    UnknownPlugin {
+        role: Role,
+        name: String,
+    },
+    UnsupportedOperation {
+        role: Role,
+        name: String,
+        operation: String,
+    },
     UnknownConfiguration(String),
     MissingConfiguration(String),
     WrongConfigurationType(String),
@@ -72,23 +101,38 @@ impl Manifest {
     pub fn validate(&self) -> Result<(), RegistryError> {
         let semver: Vec<_> = self.version.split('.').collect();
         if self.name.is_empty()
-            || !self.name.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
+            || !self
+                .name
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
             || semver.len() != 3
-            || semver.iter().any(|s| s.is_empty() || s.parse::<u32>().is_err())
+            || semver
+                .iter()
+                .any(|s| s.is_empty() || s.parse::<u32>().is_err())
             || self.operations.is_empty()
             || self.engine_contract != CONTRACT_VERSION
-            || !self.required_config.iter().all(|k| self.allowed_config.contains_key(k))
+            || !self
+                .required_config
+                .iter()
+                .all(|k| self.allowed_config.contains_key(k))
         {
             return Err(RegistryError::InvalidManifest);
         }
-        if self.constraints.needs_network && self.constraints.confirmation == AcknowledgementTier::LocalEphemeral {
+        if self.constraints.needs_network
+            && self.constraints.confirmation == AcknowledgementTier::LocalEphemeral
+        {
             return Err(RegistryError::InvalidManifest);
         }
         Ok(())
     }
-    pub fn validate_config(&self, supplied: &BTreeMap<String, ConfigType>) -> Result<(), RegistryError> {
+    pub fn validate_config(
+        &self,
+        supplied: &BTreeMap<String, ConfigType>,
+    ) -> Result<(), RegistryError> {
         for (key, actual) in supplied {
-            let expected = self.allowed_config.get(key)
+            let expected = self
+                .allowed_config
+                .get(key)
                 .ok_or_else(|| RegistryError::UnknownConfiguration(key.clone()))?;
             if actual != expected {
                 return Err(RegistryError::WrongConfigurationType(key.clone()));
@@ -114,7 +158,9 @@ pub struct Registry {
     entries: BTreeMap<(Role, String), Manifest>,
 }
 impl Registry {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn register_native<P: NativePluginContract>(&mut self) -> Result<(), RegistryError> {
         self.register(P::manifest())
     }
@@ -123,18 +169,30 @@ impl Registry {
         let key = (manifest.role, manifest.name.clone());
         if self.entries.contains_key(&key) {
             return Err(RegistryError::DuplicateIdentity {
-                role: manifest.role, name: manifest.name,
+                role: manifest.role,
+                name: manifest.name,
             });
         }
         self.entries.insert(key, manifest);
         Ok(())
     }
-    pub fn select(&self, role: Role, name: &str, operation: &str) -> Result<&Manifest, RegistryError> {
-        let manifest = self.entries.get(&(role, name.to_owned()))
-            .ok_or_else(|| RegistryError::UnknownPlugin { role, name: name.to_owned() })?;
+    pub fn select(
+        &self,
+        role: Role,
+        name: &str,
+        operation: &str,
+    ) -> Result<&Manifest, RegistryError> {
+        let manifest = self.entries.get(&(role, name.to_owned())).ok_or_else(|| {
+            RegistryError::UnknownPlugin {
+                role,
+                name: name.to_owned(),
+            }
+        })?;
         if !manifest.operations.contains(operation) {
             return Err(RegistryError::UnsupportedOperation {
-                role, name: name.to_owned(), operation: operation.to_owned(),
+                role,
+                name: name.to_owned(),
+                operation: operation.to_owned(),
             });
         }
         if !manifest.constraints.manual_batch
@@ -144,20 +202,32 @@ impl Registry {
             || manifest.constraints.confirmation == AcknowledgementTier::DurableConfirmed
         {
             return Err(RegistryError::UnsupportedOperation {
-                role, name: name.to_owned(), operation: operation.to_owned(),
+                role,
+                name: name.to_owned(),
+                operation: operation.to_owned(),
             });
         }
         Ok(manifest)
     }
-    pub fn count(&self) -> usize { self.entries.len() }
+    pub fn count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
-fn builtin(role: Role, name: &str, operation: &str, keys: &[(&str, ConfigType)], required: &[&str]) -> Manifest {
+fn builtin(
+    role: Role,
+    name: &str,
+    operation: &str,
+    keys: &[(&str, ConfigType)],
+    required: &[&str],
+) -> Manifest {
     Manifest {
-        role, name: name.into(), version: "0.1.0".into(),
+        role,
+        name: name.into(),
+        version: "0.1.0".into(),
         engine_contract: CONTRACT_VERSION,
         operations: BTreeSet::from([operation.into()]),
-        allowed_config: keys.iter().map(|(k,v)| ((*k).into(), *v)).collect(),
+        allowed_config: keys.iter().map(|(k, v)| ((*k).into(), *v)).collect(),
         required_config: required.iter().map(|k| (*k).into()).collect(),
         constraints: Constraints::p1_ephemeral(),
     }
@@ -169,29 +239,82 @@ pub fn p1_contracts() -> Registry {
     use ConfigType::{Boolean as B, Mapping as M, Sequence as Q, String as S};
     let mut registry = Registry::new();
     let manifests = [
-        builtin(Role::Source, "local", "manual-readonly",
-            &[("type", S), ("path", S), ("file_pattern", S), ("recursive", B)],
-            &["type", "path"]),
-        builtin(Role::Sink, "local", "scratch-single",
-            &[("type", S), ("path", S), ("file_mode", S), ("filename_template", S),
-              ("overwrite", B), ("condition", S), ("transforms", Q)],
-            &["type", "path", "file_mode", "filename_template", "overwrite"]),
-        builtin(Role::Serializer, "json", "decode",
-            &[("type", S)], &["type"]),
-        builtin(Role::Transform, "rename", "stateless",
-            &[("type", S), ("fields", M)], &["type", "fields"]),
-        builtin(Role::Transform, "add_field", "stateless",
-            &[("type", S), ("fields", M)], &["type", "fields"]),
-        builtin(Role::Transform, "filter", "stateless",
-            &[("type", S), ("condition", S)], &["type", "condition"]),
-        builtin(Role::Transform, "drop", "stateless",
-            &[("type", S), ("fields", Q)], &["type", "fields"]),
+        builtin(
+            Role::Source,
+            "local",
+            "manual-readonly",
+            &[
+                ("type", S),
+                ("path", S),
+                ("file_pattern", S),
+                ("recursive", B),
+            ],
+            &["type", "path"],
+        ),
+        builtin(
+            Role::Sink,
+            "local",
+            "scratch-single",
+            &[
+                ("type", S),
+                ("path", S),
+                ("file_mode", S),
+                ("filename_template", S),
+                ("overwrite", B),
+                ("condition", S),
+                ("transforms", Q),
+            ],
+            &[
+                "type",
+                "path",
+                "file_mode",
+                "filename_template",
+                "overwrite",
+            ],
+        ),
+        builtin(
+            Role::Serializer,
+            "json",
+            "decode",
+            &[("type", S)],
+            &["type"],
+        ),
+        builtin(
+            Role::Transform,
+            "rename",
+            "stateless",
+            &[("type", S), ("fields", M)],
+            &["type", "fields"],
+        ),
+        builtin(
+            Role::Transform,
+            "add_field",
+            "stateless",
+            &[("type", S), ("fields", M)],
+            &["type", "fields"],
+        ),
+        builtin(
+            Role::Transform,
+            "filter",
+            "stateless",
+            &[("type", S), ("condition", S)],
+            &["type", "condition"],
+        ),
+        builtin(
+            Role::Transform,
+            "drop",
+            "stateless",
+            &[("type", S), ("fields", Q)],
+            &["type", "fields"],
+        ),
     ];
     for mut entry in manifests {
         if entry.role == Role::Serializer {
             entry.operations.insert("encode".into());
         }
-        registry.register(entry).expect("valid compiled-in manifest");
+        registry
+            .register(entry)
+            .expect("valid compiled-in manifest");
     }
     registry
 }
@@ -202,7 +325,13 @@ mod tests {
     struct Fake;
     impl NativePluginContract for Fake {
         fn manifest() -> Manifest {
-            builtin(Role::Source, "fake", "read", &[("type", ConfigType::String)], &["type"])
+            builtin(
+                Role::Source,
+                "fake",
+                "read",
+                &[("type", ConfigType::String)],
+                &["type"],
+            )
         }
     }
     #[test]
@@ -210,46 +339,72 @@ mod tests {
         let mut reg = Registry::new();
         reg.register_native::<Fake>().expect("native entry");
         assert_eq!(reg.count(), 1);
-        assert_eq!(reg.register_native::<Fake>(),
-            Err(RegistryError::DuplicateIdentity { role: Role::Source, name: "fake".into() }));
+        assert_eq!(
+            reg.register_native::<Fake>(),
+            Err(RegistryError::DuplicateIdentity {
+                role: Role::Source,
+                name: "fake".into()
+            })
+        );
     }
     #[test]
     fn exact_selection_rejects_missing_and_incompatible_operations() {
         let reg = p1_contracts();
-        assert!(matches!(reg.select(Role::Source, "nope", "manual-readonly"),
-            Err(RegistryError::UnknownPlugin { .. })));
-        assert!(matches!(reg.select(Role::Source, "local", "write"),
-            Err(RegistryError::UnsupportedOperation { .. })));
+        assert!(matches!(
+            reg.select(Role::Source, "nope", "manual-readonly"),
+            Err(RegistryError::UnknownPlugin { .. })
+        ));
+        assert!(matches!(
+            reg.select(Role::Source, "local", "write"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
         assert!(reg.select(Role::Source, "local", "manual-readonly").is_ok());
-        assert!(matches!(reg.select(Role::Sink, "local", "manual-readonly"),
-            Err(RegistryError::UnsupportedOperation { .. })));
+        assert!(matches!(
+            reg.select(Role::Sink, "local", "manual-readonly"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
     }
     #[test]
     fn exact_schema_rejects_unknown_and_wrong_types() {
         let reg = p1_contracts();
-        let src = reg.select(Role::Source, "local", "manual-readonly").expect("local");
+        let src = reg
+            .select(Role::Source, "local", "manual-readonly")
+            .expect("local");
         let mut config = BTreeMap::from([
             ("type".into(), ConfigType::String),
             ("path".into(), ConfigType::String),
         ]);
         assert!(src.validate_config(&config).is_ok());
         config.insert("random".into(), ConfigType::Boolean);
-        assert_eq!(src.validate_config(&config), Err(RegistryError::UnknownConfiguration("random".into())));
+        assert_eq!(
+            src.validate_config(&config),
+            Err(RegistryError::UnknownConfiguration("random".into()))
+        );
         config.remove("random");
         config.insert("path".into(), ConfigType::Integer);
-        assert_eq!(src.validate_config(&config), Err(RegistryError::WrongConfigurationType("path".into())));
+        assert_eq!(
+            src.validate_config(&config),
+            Err(RegistryError::WrongConfigurationType("path".into()))
+        );
         config.remove("path");
-        assert_eq!(src.validate_config(&config), Err(RegistryError::MissingConfiguration("path".into())));
+        assert_eq!(
+            src.validate_config(&config),
+            Err(RegistryError::MissingConfiguration("path".into()))
+        );
     }
     #[test]
     fn json_exact_name_supports_decode_and_encode_but_not_other_operations() {
         let registry = p1_contracts();
         assert!(registry.select(Role::Serializer, "json", "decode").is_ok());
         assert!(registry.select(Role::Serializer, "json", "encode").is_ok());
-        assert!(matches!(registry.select(Role::Serializer, "json", "stream"),
-            Err(RegistryError::UnsupportedOperation { .. })));
-        assert!(matches!(registry.select(Role::Serializer, "json_encoder", "encode"),
-            Err(RegistryError::UnknownPlugin { .. })));
+        assert!(matches!(
+            registry.select(Role::Serializer, "json", "stream"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
+        assert!(matches!(
+            registry.select(Role::Serializer, "json_encoder", "encode"),
+            Err(RegistryError::UnknownPlugin { .. })
+        ));
     }
     #[test]
     fn unsupported_effectful_plugin_is_rejected() {
@@ -259,7 +414,9 @@ mod tests {
         external.constraints.needs_network = true;
         external.constraints.confirmation = AcknowledgementTier::None;
         reg.register(external).expect("manifest shape");
-        assert!(matches!(reg.select(Role::Source, "remote", "read"),
-            Err(RegistryError::UnsupportedOperation { .. })));
+        assert!(matches!(
+            reg.select(Role::Source, "remote", "read"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
     }
 }

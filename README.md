@@ -1,26 +1,34 @@
 # TRAM Rust — Trishul Real-time Aggregation & Mediation
 
-Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-ram), targeting equivalent user-facing functionality with a new, correctness-first execution architecture and measurable Rust-native efficiency.
+Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-ram), targeting equivalent user-facing capabilities through a new execution architecture rather than a mechanical port.
 
-> **Status: Phase 0 — architecture proposal, not yet approved.** There is no working Rust daemon or supported production deployment in this repository.
+> **Status: Phase 0 / PROPOSED.** Architecture and contracts are under review. There is no running Rust TRAM product in this repository yet. No design is frozen and no implementation is authorized by these documents.
 
-## Design direction
+## Design principles
 
-- One shared pipeline execution engine for standalone and distributed manager/worker deployments.
-- Trait-based registry for sources, sinks, serializers and transforms; begin with local and SNMP plus JSON and a small transform set.
-- Explicit delivery, backpressure, recovery, security and resource-budget contracts.
-- Existing Python behavior is a reference for accepted user-facing requirements; documented defects and incidental implementation choices are not migration requirements.
-- Native SNMP integration through [trishul-snmp-rust](https://github.com/tosumitdhaka/trishul-snmp-rust), without duplicating its protocol stack.
-- Implement in vertical slices, with conformance tests and independent design review before expanding plugin breadth.
+1. One reusable execution engine for standalone and distributed manager–worker operation.
+2. Preserve accepted user-facing functionality; identify, test and correct documented defects instead of porting them.
+3. Build source, sink, serializer and transform plugin contracts first, and add implementations incrementally.
+4. Enforce bounded resources, truthful delivery outcomes, recovery, authentication and cancellation from the outset.
+5. Adopt [trishul-snmp-rust](https://github.com/tosumitdhaka/trishul-snmp-rust) as the native SNMP implementation; do not duplicate its wire stack.
+6. Measure complete-output throughput, CPU and memory against pinned Python baselines; do not assume language alone provides a speedup.
 
-See the proposed Phase 0 documents on the design branch. The design is **not frozen** until an explicit review and approval.
+## Phase 0 documents
+
+- [System architecture](docs/phase-0/architecture.md)
+- [Plugin and data model contracts](docs/phase-0/plugin-contracts.md)
+- [Reliability, delivery, security and operations](docs/phase-0/reliability-contracts.md)
+- [Migration scope, gates and open decisions](docs/phase-0/migration-plan.md)
+
+**Proposed initial vertical slice:** local source + local sink + JSON serializer + a few stateless transforms, exercising the full registry, pipeline engine and failure semantics. Next add native SNMP polling, walks and traps. Then complete standalone orchestration and manager–worker deployment through the same engine.
 
 ## References
 
 - [Python TRAM](https://github.com/tosumitdhaka/trishul-ram)
-- [Existing Rust migration assessment](https://github.com/tosumitdhaka/trishul-ram/blob/main/docs/ideas/rust-migration-assessment-2026-10.md)
-- [Native Rust SNMP stack](https://github.com/tosumitdhaka/trishul-snmp-rust)
+- [Python Rust-migration assessment (2026-10-06)](https://github.com/tosumitdhaka/trishul-ram/blob/main/docs/ideas/rust-migration-assessment-2026-10.md)
+- [Python v1.8.x hardening inventory](https://github.com/tosumitdhaka/trishul-ram/blob/main/docs/ideas/open-items-inventory-2026-10-10.md)
+- [Native Rust SNMP toolkit](https://github.com/tosumitdhaka/trishul-snmp-rust)
 
-## License
+## Provenance and license
 
-License selection and provenance of reused assets must be resolved as part of Phase 0 before importing code or UI assets.
+This is independently authored design material informed by the reference implementation. Code and assets are **not** imported by this bootstrap. The repository license, UI asset reuse and third-party dependency provenance require explicit decisions before importing anything.

@@ -1,0 +1,124 @@
+# TRAM Rust — proposed plugin, record and configuration contracts
+
+**Status:** PROPOSED; interfaces below express required semantics, not compilable production Rust trait definitions.
+
+## 1. Registry before catalog
+
+Four public plugin *roles* are mandatory even if initial implementations are few:
+
+- **Source**: batch pull, scheduled polling or long-running push/listen; exposes explicit acknowledgement capability.
+- **Serializer**: raw bytes ⇄ typed records; schema-aware where supported; streaming/batch framing is declared.
+- **Transform**: per-record or keyed-stateful record operation; may drop, expand or produce error dispositions.
+- **Sink**: accepts encoded payload or structured batches; returns write, flush and durable-confirmation semantics.
+
+A plugin manifest provides stable `category/name`, semantic implementation version, compatible engine contract version, config schema, supported operation modes, accepted/produced value kinds, acknowledgement/durability tier, ordering guarantees, batch-size limit, cancellation behavior, and required external permissions/secrets. Runtime instance factory is registered at build time initially.
+
+**Do not confuse selection with hot loading.** New native plugins require a build/redeploy in v1. External-process/WASM adapters, stable ABI and third-party code sandboxing are independent future designs. Runtime YAML hot-reload can replace *plans* subject to execution fencing without loading arbitrary code.
+
+### Conceptual lifecycle
+
+| Role | Conceptual operations | Mandatory output |
+|---|---|---|
+| Source | validate → open → next/subscribe → ack/nack/checkpoint → close | bounded ingress items + stable source identity where available |
+| Serializer | validate → decode/encode (possibly streaming) | typed records or bytes + deterministic error classification |
+| Transform | validate → initialize → apply → snapshot/restore → close | zero/one/many records or explicit discard/error |
+| Sink | validate → open → write → flush/confirm → close | per-item/partition outcome and confirmation tier |
+| Registry | enumerate → schema → match capability → instantiate | deterministic plan selection or rejection |
+
+Closed/failed plugins must not continue to produce writes after ownership/cancellation invalidation to the extent a protocol allows. Plugin panic must become a bounded run failure rather than corrupting the manager ledger; untrusted native code cannot be treated as process-isolated.
+
+## 2. Canonical data model
+
+Avoid using `serde_json::Value` as the *only* internal representation: the engine must preserve telecom-specific `u64` counters, byte arrays, timestamps, large integer/decimal values, missing vs null and metadata. Proposed conceptual types:
+
+```text
+RecordEnvelope {
+  data: ordered map<string, Datum>,     # field order when format requires it
+  metadata: {source, received_at, ...}, # namespaced immutable provenance
+  origin: SourcePosition | None,        # replay/ack semantics
+  schema_ref: SchemaIdentity | None,
+}
+Datum =
+  Null | Bool | SignedInteger | UnsignedInteger | BigInteger |
+  Decimal | Float | String | Bytes | Timestamp |
+  Array<Datum> | Object<map<string, Datum>>
+IngressItem =
+  RawBytes(Bytes, Meta, SourcePosition?) |
+  StructuredRecords(Batch<RecordEnvelope>, Meta, SourcePosition?)
+```
+
+These are candidates, **not** final Rust API or ABI. Choose allocation/copy strategy (borrowed buffers, `Bytes`, COW/arena or owned `Arc` batches) using profiling; correctness must not depend on memory aliasing. Bytes must not be silently UTF-8-coerced. JSON adapters explicitly define encoding conventions for bytes, timestamps, non-JSON numbers and `NaN` values.
+
+Record identity and source checkpoint are distinct. A batch can share source position while containing multiple records. Traps and other unacknowledgeable push events declare that limitation. Preserve per-sink mutation isolation.
+
+## 3. Plan and config validation
+
+Plan structure (illustrative only, to be matched against Python YAML contracts in migration tests):
+
+```yaml
+source:
+  type: local
+  path: /data/incoming/*.json
+serializer_in:
+  type: json
+transforms:
+  - type: rename
+    fields: {raw_id: cell_id}
+sinks:
+  - type: local
+    path: /data/outgoing
+    serializer: json
+schedule:
+  type: manual
+```
+
+- Existing Python YAML should be accepted for *supported semantics*, with a declared compatibility subset. Do not claim universal config parity in Phase 1.
+- Unknown plugin, misspelled option, unsupported operation, ambiguous schema, invalid env reference and unavailable secret fail **before opening a source**. New engine-specific config changes must be versioned with migration guidance.
+- Compile transforms and predicates once per plan; parameter values and schema references are validated at compile/load time where feasible.
+- Compatibility tests must cover default values, field aliases, null vs absent, integer bounds, expression truthiness, error reporting and sensitive-config redaction.
+- Plugin capability is a function of **plugin version + mode + options**, not merely a connector name. For example, polling vs traps, v2c vs v3, or ackable vs non-ackable matters.
+
+## 4. Delivery-relevant capabilities
+
+```text
+SourceCapabilities:
+  mode: batch | stream | both
+  replayable: bool
+  ack_mode: none | per_record | per_batch | checkpoint
+  ordering: unordered | partition_ordered | total_ordered
+
+SinkCapabilities:
+  input: bytes | structured | both
+  confirm: none | accepted | durable | transactional
+  idempotency_key: unsupported | optional | required
+  ordering: unordered | partition_ordered | total_ordered
+
+TransformCapabilities:
+  state: stateless | keyed | global
+  cardinality: one_to_one | filter | expand | aggregate
+  deterministic: bool
+```
+
+Terms are provisional and need precise codec-specific interpretations. The planner rejects any requested delivery contract that no end-to-end path can support. A sink returning `accepted` into a buffer is not automatically `confirmed`.
+
+## 5. Initial plugin implementations and test strategy
+
+**First vertical slice (engine proof, not feature-complete product):**
+- Local file source and local file sink, with staged finalization behavior.
+- JSON serializer (including NDJSON as separate framing capability only if proven).
+- Stateless `rename`, `add_field`, `filter`, `drop` transforms.
+- One multi-sink route and one explicit invalid-config/record failure path.
+
+**Next vertical slice (telecom proof):**
+- `snmp_poll` and `snmp_trap` source operations; optional `snmp_trap` sink after receiver/conformance validation.
+- Native `trishul-snmp` manager/listener/notifier; compiled JSON MIB bundle consumed via library. TRAM-specific mapping translates varbind OID/type/value into stable records.
+- Live v1/v2c/v3 tests, community checks, USM wrong-key/privacy handling, duplicate/replay, Counter64 and malformed frames; traps never claim replayable acknowledgement.
+
+**After foundation:** Kafka, REST/webhook, SFTP, other serializers and stateful transforms, each behind its own capability-specific test suite. Priority from production value and risk, not Python source-file order.
+
+## 6. Test seam and versioning contract
+
+- The registry must allow deterministic **test plugin** implementations for failures, timeouts, duplicate data, slow sinks and cancellation.
+- Include plan compile tests, plugin config schema tests, descriptor honesty assertions, cross-version schema compatibility tests and negative capability cases.
+- Every plugin release adds golden input/output fixtures, failure/recovery cases, overload/cancellation evidence and performance where relevant.
+- A plugin cannot be considered supported until its manifest, docs and executed tests agree.

@@ -234,3 +234,40 @@ fn comp_01_rejects_bad_sink_topology_and_unsafe_outputs() {
         "CONFIG_UNSUPPORTED_PLUGIN",
     );
 }
+
+#[test]
+fn comp_01_defaults_require_exact_capabilities_and_no_implicit_retries() {
+    use tram_config::compile_p1;
+    use tram_registry::{p1_contracts, Registry, Role};
+
+    let omitted = GOLDEN.replace("  serializer_out:\n    type: json\n", "");
+    assert!(compile(&omitted).is_ok(), "omitted serializer_out defaults to json");
+    for key in ["  retry_count: 0\n", "  retry_delay_seconds: 0\n"] {
+        err_code(&GOLDEN.replace(key, ""), "CONFIG_INVALID_VALUE");
+    }
+    let supported = p1_contracts();
+    let mut missing_encode = Registry::new();
+    for (role, name, operation) in [
+        (Role::Source, "local", "manual-readonly"),
+        (Role::Sink, "local", "scratch-single"),
+        (Role::Serializer, "json", "decode"),
+        (Role::Transform, "rename", "stateless"),
+        (Role::Transform, "add_field", "stateless"),
+        (Role::Transform, "filter", "stateless"),
+        (Role::Transform, "drop", "stateless"),
+    ] {
+        let mut manifest = supported.select(role, name, operation).expect("built-in manifest").clone();
+        if role == Role::Serializer {
+            manifest.operations.remove("encode");
+        }
+        missing_encode.register(manifest).expect("unique manifest");
+    }
+    assert!(matches!(
+        compile_p1(&omitted, &vars(), &missing_encode),
+        Err(ConfigError::UnsupportedOption(_))
+    ));
+    assert!(matches!(
+        compile_p1(GOLDEN, &vars(), &missing_encode),
+        Err(ConfigError::UnsupportedOption(_))
+    ));
+}

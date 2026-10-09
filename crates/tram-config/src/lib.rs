@@ -724,8 +724,10 @@ pub fn compile_p1(
     if string(required(m, "on_error")?, "on_error")? != "abort" {
         return Err(ConfigError::UnsupportedOption("on_error".into()));
     }
-    expected_int(m, "retry_count", 0)?;
-    expected_int(m, "retry_delay_seconds", 0)?;
+    for key in ["retry_count", "retry_delay_seconds"] {
+        required(m, key)?;
+        expected_int(m, key, 0)?;
+    }
     if let Some(v) = get(m, "dlq") {
         if !v.is_null() {
             return Err(ConfigError::UnsupportedOption("dlq".into()));
@@ -761,6 +763,10 @@ pub fn compile_p1(
     serializer(required(m, "serializer_in")?, registry, "decode")?;
     if let Some(v) = get(m, "serializer_out") {
         serializer(v, registry, "encode")?;
+    } else {
+        registry
+            .select(Role::Serializer, "json", "encode")
+            .map_err(|_| ConfigError::UnsupportedOption("default json encode".into()))?;
     }
     let global = get(m, "transforms")
         .map(|v| transforms(v, registry))

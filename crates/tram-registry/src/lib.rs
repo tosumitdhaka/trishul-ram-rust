@@ -7,6 +7,9 @@ use std::error::Error;
 use std::fmt;
 
 pub const CONTRACT_VERSION: u32 = 1;
+/// Frozen P1 decoded-record ceiling per source unit (resource-budgets.md).
+/// Capability is an advertised maximum; admitting >=4096 does not raise the plan cap.
+pub const P1_REQUIRED_BATCH_CAPACITY: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Role {
@@ -48,7 +51,7 @@ impl Constraints {
         Self {
             manual_batch: true,
             streaming: false,
-            max_batch: 4096,
+            max_batch: P1_REQUIRED_BATCH_CAPACITY,
             can_cancel: true,
             acknowledges_source: false,
             confirmation: AcknowledgementTier::LocalEphemeral,
@@ -110,6 +113,7 @@ impl Manifest {
                 .iter()
                 .any(|s| s.is_empty() || s.parse::<u32>().is_err())
             || self.operations.is_empty()
+            || self.constraints.max_batch == 0
             || self.engine_contract != CONTRACT_VERSION
             || !self
                 .required_config
@@ -196,6 +200,8 @@ impl Registry {
             });
         }
         if !manifest.constraints.manual_batch
+            || !manifest.constraints.can_cancel
+            || manifest.constraints.max_batch < P1_REQUIRED_BATCH_CAPACITY
             || manifest.constraints.streaming
             || manifest.constraints.acknowledges_source
             || manifest.constraints.needs_network
@@ -406,6 +412,43 @@ mod tests {
             Err(RegistryError::UnknownPlugin { .. })
         ));
     }
+    #[test]
+    fn p1_batch_capacity_and_cancellation_are_required_for_injected_manifests() {
+        let mut candidate = Fake::manifest();
+        assert_eq!(candidate.constraints.max_batch, P1_REQUIRED_BATCH_CAPACITY);
+        let mut valid = Registry::new();
+        valid.register(candidate.clone()).expect("valid P1 manifest");
+        assert!(valid.select(Role::Source, "fake", "read").is_ok());
+        assert!(matches!(
+            valid.select(Role::Source, "fake", "wrong"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
+
+        candidate.constraints.can_cancel = false;
+        let mut no_cancel = Registry::new();
+        no_cancel.register(candidate.clone()).expect("schema legal but non-P1");
+        assert!(matches!(
+            no_cancel.select(Role::Source, "fake", "read"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
+        candidate.constraints.can_cancel = true;
+
+        candidate.constraints.max_batch = P1_REQUIRED_BATCH_CAPACITY - 1;
+        let mut too_small = Registry::new();
+        too_small.register(candidate.clone()).expect("nonzero declared capacity");
+        assert!(matches!(
+            too_small.select(Role::Source, "fake", "read"),
+            Err(RegistryError::UnsupportedOperation { .. })
+        ));
+        candidate.constraints.max_batch = 0;
+        assert_eq!(candidate.validate(), Err(RegistryError::InvalidManifest));
+        assert_eq!(Registry::new().register(candidate.clone()), Err(RegistryError::InvalidManifest));
+        candidate.constraints.max_batch = P1_REQUIRED_BATCH_CAPACITY;
+        let mut at_boundary = Registry::new();
+        at_boundary.register(candidate).expect("valid boundary");
+        assert!(at_boundary.select(Role::Source, "fake", "read").is_ok());
+    }
+
     #[test]
     fn unsupported_effectful_plugin_is_rejected() {
         let mut reg = Registry::new();

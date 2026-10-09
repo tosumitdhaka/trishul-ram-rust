@@ -434,9 +434,9 @@ impl Parser {
         Ok(a)
     }
     fn logical_and(&mut self, depth: usize) -> Result<Expression, ConfigError> {
-        let mut a = self.compare(depth)?;
+        let mut a = self.logical_not(depth)?;
         while self.take(&Token::And) {
-            let b = self.compare(depth)?;
+            let b = self.logical_not(depth)?;
             a = Expression::Binary {
                 op: BinaryOp::And,
                 left: Box::new(a),
@@ -444,6 +444,22 @@ impl Parser {
             };
         }
         Ok(a)
+    }
+    // Python: arithmetic > comparison > not > and > or.
+    // Unary 'not' must consume a comparison, not a single arithmetic atom.
+    fn logical_not(&mut self, depth: usize) -> Result<Expression, ConfigError> {
+        if depth > 32 {
+            return Err(ConfigError::UnsupportedExpression);
+        }
+        if self.take(&Token::Not) {
+            let expr = self.logical_not(depth + 1)?;
+            Ok(Expression::Unary {
+                op: UnaryOp::Not,
+                expr: Box::new(expr),
+            })
+        } else {
+            self.compare(depth)
+        }
     }
     fn compare(&mut self, depth: usize) -> Result<Expression, ConfigError> {
         let mut a = self.add(depth)?;
@@ -508,13 +524,6 @@ impl Parser {
             let expr = self.atom(depth + 1)?;
             return Ok(Expression::Unary {
                 op: UnaryOp::Negative,
-                expr: Box::new(expr),
-            });
-        }
-        if self.take(&Token::Not) {
-            let expr = self.atom(depth + 1)?;
-            return Ok(Expression::Unary {
-                op: UnaryOp::Not,
                 expr: Box::new(expr),
             });
         }
@@ -612,10 +621,17 @@ fn serializer(value: &Value, registry: &Registry, op: &str) -> Result<(), Config
     let name = string(required(m, "type")?, "type")?;
     validate_plugin(registry, Role::Serializer, name, op, m)
 }
-fn sinks(value: &Value, registry: &Registry) -> Result<Vec<Sink>, ConfigError> {
-    let items: Vec<&Value> = match value.as_sequence() {
-        Some(xs) => xs.iter().collect(),
-        None => vec![value],
+fn sinks(value: &Value, plural: bool, registry: &Registry) -> Result<Vec<Sink>, ConfigError> {
+    // No single/list shape coercion: Python's 'sink' and 'sinks' are distinct.
+    let items: Vec<&Value> = if plural {
+        value
+            .as_sequence()
+            .ok_or_else(|| ConfigError::InvalidValue("sinks must be a sequence".into()))?
+            .iter()
+            .collect()
+    } else {
+        map(value, "sink must be one mapping")?;
+        vec![value]
     };
     if items.is_empty() || items.len() > 2 {
         return Err(ConfigError::UnsupportedOption("sink count".into()));
@@ -775,10 +791,11 @@ pub fn compile_p1(
     if get(m, "sink").is_some() && get(m, "sinks").is_some() {
         return Err(ConfigError::UnsupportedOption("sink and sinks".into()));
     }
-    let sink_value = get(m, "sink")
-        .or_else(|| get(m, "sinks"))
-        .ok_or_else(|| ConfigError::InvalidValue("sinks".into()))?;
-    let destinations = sinks(sink_value, registry)?;
+    let destinations = if let Some(value) = get(m, "sink") {
+        sinks(value, false, registry)?
+    } else {
+        sinks(required(m, "sinks")?, true, registry)?
+    };
     Ok(ValidatedPlan {
         contract_version: PLAN_VERSION,
         ephemeral_only: true,

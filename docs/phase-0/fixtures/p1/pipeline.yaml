@@ -1,0 +1,43 @@
+version: "1"
+pipeline:
+  name: p1-local-json
+  enabled: true
+  schedule:
+    type: manual
+  source:
+    type: local
+    path: ${TRAM_P1_INPUT_DIR}
+    file_pattern: "*.json"
+    recursive: false
+  serializer_in:
+    type: json
+  transforms:
+    - type: rename
+      fields: {old_id: cell_id}
+    - type: add_field
+      fields: {double_metric: "metric * 2"}
+    - type: filter
+      condition: "metric >= 10"
+    - type: drop
+      fields: [metric]
+  serializer_out:
+    type: json
+  sinks:
+    - type: local
+      path: ${TRAM_P1_SCRATCH_A}
+      file_mode: single
+      overwrite: false
+      filename_template: "output-a.json"
+    - type: local
+      path: ${TRAM_P1_SCRATCH_B}
+      file_mode: single
+      overwrite: false
+      filename_template: "output-b.json"
+      transforms:
+        - type: add_field
+          fields: {tag: "'secondary'"}
+  thread_workers: 1
+  parallel_sinks: false
+  on_error: abort
+  retry_count: 0
+  retry_delay_seconds: 0

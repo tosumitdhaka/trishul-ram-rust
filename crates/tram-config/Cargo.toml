@@ -6,5 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+tram-model = { path = "../tram-model" }
+tram-registry = { path = "../tram-registry" }
+serde_yaml_ng = "=0.10.0"
+
 [lints]
 workspace = true

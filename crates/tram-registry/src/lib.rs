@@ -178,8 +178,6 @@ pub fn p1_contracts() -> Registry {
             &["type", "path", "file_mode", "filename_template", "overwrite"]),
         builtin(Role::Serializer, "json", "decode",
             &[("type", S)], &["type"]),
-        builtin(Role::Serializer, "json_encoder", "encode",
-            &[("type", S)], &["type"]),
         builtin(Role::Transform, "rename", "stateless",
             &[("type", S), ("fields", M)], &["type", "fields"]),
         builtin(Role::Transform, "add_field", "stateless",
@@ -189,7 +187,10 @@ pub fn p1_contracts() -> Registry {
         builtin(Role::Transform, "drop", "stateless",
             &[("type", S), ("fields", Q)], &["type", "fields"]),
     ];
-    for entry in manifests {
+    for mut entry in manifests {
+        if entry.role == Role::Serializer {
+            entry.operations.insert("encode".into());
+        }
         registry.register(entry).expect("valid compiled-in manifest");
     }
     registry
@@ -239,6 +240,16 @@ mod tests {
         assert_eq!(src.validate_config(&config), Err(RegistryError::WrongConfigurationType("path".into())));
         config.remove("path");
         assert_eq!(src.validate_config(&config), Err(RegistryError::MissingConfiguration("path".into())));
+    }
+    #[test]
+    fn json_exact_name_supports_decode_and_encode_but_not_other_operations() {
+        let registry = p1_contracts();
+        assert!(registry.select(Role::Serializer, "json", "decode").is_ok());
+        assert!(registry.select(Role::Serializer, "json", "encode").is_ok());
+        assert!(matches!(registry.select(Role::Serializer, "json", "stream"),
+            Err(RegistryError::UnsupportedOperation { .. })));
+        assert!(matches!(registry.select(Role::Serializer, "json_encoder", "encode"),
+            Err(RegistryError::UnknownPlugin { .. })));
     }
     #[test]
     fn unsupported_effectful_plugin_is_rejected() {

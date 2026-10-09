@@ -60,12 +60,18 @@ identity!(PipelineRevision);
 identity!(BranchId);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Canonical timestamp: unchecked component struct literals cannot compile.
+///
+/// ```compile_fail
+/// use tram_model::Timestamp;
+/// let invalid = Timestamp { unix_seconds: 0, nanos: 1_000_000_000, offset_seconds: 900_000 };
+/// ```
 pub struct Timestamp {
     /// Unix epoch seconds; leap-second policy belongs to the codec.
-    pub unix_seconds: i64,
-    pub nanos: u32,
+    unix_seconds: i64,
+    nanos: u32,
     /// Offset in seconds from UTC, preserved rather than silently discarded.
-    pub offset_seconds: i32,
+    offset_seconds: i32,
 }
 impl Timestamp {
     pub fn new(unix_seconds: i64, nanos: u32, offset_seconds: i32) -> Result<Self, ModelError> {
@@ -78,6 +84,9 @@ impl Timestamp {
             offset_seconds,
         })
     }
+    pub fn unix_seconds(&self) -> i64 { self.unix_seconds }
+    pub fn nanos(&self) -> u32 { self.nanos }
+    pub fn offset_seconds(&self) -> i32 { self.offset_seconds }
 }
 
 fn canonical_integer(text: &str) -> bool {
@@ -97,16 +106,70 @@ fn canonical_decimal(text: &str) -> bool {
     }
 }
 
+/// Validated arbitrary-precision integer with an opaque canonical representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedBigInteger(String);
+impl ValidatedBigInteger {
+    pub fn new(value: impl Into<String>) -> Result<Self, ModelError> {
+        let value = value.into();
+        if !canonical_integer(&value) { return Err(ModelError::InvalidNumber); }
+        Ok(Self(value))
+    }
+    pub fn as_str(&self) -> &str { &self.0 }
+}
+/// Validated exact decimal, preserving input scale without float conversion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedDecimal(String);
+impl ValidatedDecimal {
+    pub fn new(value: impl Into<String>) -> Result<Self, ModelError> {
+        let value = value.into();
+        if !canonical_decimal(&value) { return Err(ModelError::InvalidNumber); }
+        Ok(Self(value))
+    }
+    pub fn as_str(&self) -> &str { &self.0 }
+}
+/// Finite IEEE-754 float; NaN and both infinities are unrepresentable in safe APIs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FiniteFloat(f64);
+impl FiniteFloat {
+    pub fn new(value: f64) -> Result<Self, ModelError> {
+        if !value.is_finite() { return Err(ModelError::NonFiniteFloat); }
+        Ok(Self(value))
+    }
+    pub fn get(self) -> f64 { self.0 }
+}
 /// Owned numbers prevent precision loss through f64 intermediate values.
+///
+/// ```compile_fail
+/// use tram_model::Datum;
+/// let bad = Datum::Float(f64::NAN);
+/// ```
+///
+/// ```compile_fail
+/// use tram_model::Datum;
+/// let bad = Datum::BigInteger("abc".into());
+/// ```
+///
+/// ```compile_fail
+/// use tram_model::Datum;
+/// let bad = Datum::Array(vec![Datum::Decimal("1..2".into())]);
+/// ```
+///
+/// ```compile_fail
+/// use tram_model::Datum;
+/// use std::collections::BTreeMap;
+/// let bad = Datum::Object(BTreeMap::from([("x".into(), Datum::Float(f64::NAN))]));
+/// ```
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Datum {
     Null,
     Boolean(bool),
     Signed(i64),
     Unsigned(u64),
-    BigInteger(String),
-    Decimal(String),
-    Float(f64),
+    BigInteger(ValidatedBigInteger),
+    Decimal(ValidatedDecimal),
+    Float(FiniteFloat),
     String(String),
     Bytes(Vec<u8>),
     Timestamp(Timestamp),
@@ -115,24 +178,13 @@ pub enum Datum {
 }
 impl Datum {
     pub fn bigint(text: impl Into<String>) -> Result<Self, ModelError> {
-        let text = text.into();
-        if !canonical_integer(&text) {
-            return Err(ModelError::InvalidNumber);
-        }
-        Ok(Self::BigInteger(text))
+        Ok(Self::BigInteger(ValidatedBigInteger::new(text)?))
     }
     pub fn decimal(text: impl Into<String>) -> Result<Self, ModelError> {
-        let text = text.into();
-        if !canonical_decimal(&text) {
-            return Err(ModelError::InvalidNumber);
-        }
-        Ok(Self::Decimal(text))
+        Ok(Self::Decimal(ValidatedDecimal::new(text)?))
     }
     pub fn float(value: f64) -> Result<Self, ModelError> {
-        if !value.is_finite() {
-            return Err(ModelError::NonFiniteFloat);
-        }
-        Ok(Self::Float(value))
+        Ok(Self::Float(FiniteFloat::new(value)?))
     }
     pub fn kind(&self) -> &'static str {
         match self {
@@ -154,7 +206,7 @@ impl Datum {
         match self {
             Self::Signed(x) => Ok(*x),
             Self::Unsigned(x) => i64::try_from(*x).map_err(|_| ModelError::NumericOverflow),
-            Self::BigInteger(x) => x.parse().map_err(|_| ModelError::NumericOverflow),
+            Self::BigInteger(x) => x.as_str().parse().map_err(|_| ModelError::NumericOverflow),
             _ => Err(ModelError::UnsupportedConversion {
                 from: self.kind(),
                 to: "i64",
@@ -165,7 +217,7 @@ impl Datum {
         match self {
             Self::Unsigned(x) => Ok(*x),
             Self::Signed(x) => u64::try_from(*x).map_err(|_| ModelError::NumericOverflow),
-            Self::BigInteger(x) => x.parse().map_err(|_| ModelError::NumericOverflow),
+            Self::BigInteger(x) => x.as_str().parse().map_err(|_| ModelError::NumericOverflow),
             _ => Err(ModelError::UnsupportedConversion {
                 from: self.kind(),
                 to: "u64",
@@ -210,6 +262,14 @@ pub struct SourcePosition {
     pub ordinal: Option<u64>,
 }
 #[derive(Clone, Debug, PartialEq)]
+/// Data/metadata recursively store Datum, whose scalars are validated-by-construction.
+///
+/// ```compile_fail
+/// use tram_model::{Datum, RecordEnvelope};
+/// fn bad(record: &mut RecordEnvelope) {
+///     record.metadata.insert("bad".into(), Datum::Float(f64::INFINITY));
+/// }
+/// ```
 pub struct RecordEnvelope {
     pub data: BTreeMap<String, Datum>,
     pub metadata: BTreeMap<String, Datum>,
@@ -288,7 +348,7 @@ mod tests {
     fn exact_representation_and_unsupported_coercion() {
         assert_eq!(Datum::bigint("01"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::bigint("-0"), Err(ModelError::InvalidNumber));
-        assert_eq!(Datum::decimal("1.20"), Ok(Datum::Decimal("1.20".into())));
+        assert_eq!(Datum::decimal("1.20"), Ok(Datum::Decimal(ValidatedDecimal::new("1.20").expect("decimal"))));
         assert_eq!(Datum::decimal("1..20"), Err(ModelError::InvalidNumber));
         assert_eq!(Datum::float(f64::NAN), Err(ModelError::NonFiniteFloat));
         assert!(matches!(
@@ -329,5 +389,53 @@ mod tests {
         assert!(RunId::new(" id ").is_err());
         assert!(Timestamp::new(0, 1_000_000_000, 0).is_err());
         assert!(Timestamp::new(0, 999_999_999, 0).is_ok());
+    }
+
+    #[test]
+    fn f4_invalid_numeric_scalars_cannot_enter_canonical_variants() {
+        for bad in ["", "abc", "+1", "00", "-0", "1.1"] {
+            assert_eq!(ValidatedBigInteger::new(bad), Err(ModelError::InvalidNumber));
+        }
+        for bad in ["", "nan", "01", "1.", "1..2", "1e6"] {
+            assert_eq!(ValidatedDecimal::new(bad), Err(ModelError::InvalidNumber));
+        }
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(FiniteFloat::new(bad), Err(ModelError::NonFiniteFloat));
+            assert_eq!(Datum::float(bad), Err(ModelError::NonFiniteFloat));
+        }
+        assert_eq!(ValidatedDecimal::new("1.200").expect("scale").as_str(), "1.200");
+        assert_eq!(ValidatedBigInteger::new("-100").expect("integer").as_str(), "-100");
+        assert_eq!(FiniteFloat::new(1.5).expect("float").get(), 1.5);
+    }
+    #[test]
+    fn f4_timestamp_components_are_only_available_through_checked_construction() {
+        assert_eq!(Timestamp::new(0, 1_000_000_000, 0), Err(ModelError::InvalidTimestamp));
+        assert_eq!(Timestamp::new(0, 0, 86_401), Err(ModelError::InvalidTimestamp));
+        assert_eq!(Timestamp::new(0, 0, -86_401), Err(ModelError::InvalidTimestamp));
+        let time = Timestamp::new(i64::MIN, 999_999_999, -86_400).expect("valid");
+        assert_eq!(time.unix_seconds(), i64::MIN);
+        assert_eq!(time.nanos(), 999_999_999);
+        assert_eq!(time.offset_seconds(), -86_400);
+    }
+    #[test]
+    fn f4_nested_canonical_collections_and_envelope_metadata_preserve_branch_isolation() {
+        let nested = Datum::Object(BTreeMap::from([(
+            "items".into(), Datum::Array(vec![
+                Datum::bigint("18446744073709551616").expect("exact bigint"),
+                Datum::decimal("0.00001").expect("exact decimal"),
+                Datum::float(f64::MIN_POSITIVE).expect("finite"),
+                Datum::Timestamp(Timestamp::new(0, 999_999_999, 0).expect("timestamp")),
+            ]),
+        )]));
+        let mut envelope = record();
+        envelope.data.insert("root".into(), nested.clone());
+        envelope.metadata.insert("extra".into(), nested);
+        envelope.provenance.ingested_at = Some(Timestamp::new(10, 20, 30).expect("timestamp"));
+        let mut branch = envelope.fork_for_branch(BranchId::new("isolated").expect("identity"));
+        branch.metadata.insert("new".into(), Datum::Null);
+        assert_eq!(envelope.metadata.len(), 1);
+        assert_eq!(branch.metadata.len(), 2);
+        assert!(matches!(envelope.data.get("root"), Some(Datum::Object(_))));
+        assert_eq!(envelope.provenance.ingested_at.as_ref().expect("time").nanos(), 20);
     }
 }

@@ -15,6 +15,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+      - name: Verify frozen fixture blob pins
+        run: |
+          test "$(git hash-object docs/phase-0/fixtures/p1/pipeline.yaml)" = "4ca175df56a8bc86655da49f6713d8a5c64a0e41"
+          test "$(git hash-object docs/phase-0/fixtures/p1/input.json)" = "5e9127b5ecb429199f1e150726b8091ddf898430"
+          test "$(git hash-object docs/phase-0/fixtures/p1/expected-a.json)" = "72ef5ae522bc6cb032b18c49150ea6cadecce993"
+          test "$(git hash-object docs/phase-0/fixtures/p1/expected-b.json)" = "1dc44035a3fa51938f640d838562bee7d54baa16"
       - name: Lockfile verification
         id: lock
         run: |

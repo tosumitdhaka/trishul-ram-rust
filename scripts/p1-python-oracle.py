@@ -35,6 +35,10 @@ def main() -> None:
     assert sha == PIN, f"Python oracle pin drift: {sha}"
     print("PYTHON_ORACLE_SHA", sha, flush=True)
     print("PYTHON_ORACLE_INTERPRETER", platform.python_version(), flush=True)
+    # Match the pinned reference test bootstrap: registry is decorator-based.
+    import tram.connectors  # noqa: F401
+    import tram.serializers  # noqa: F401
+    import tram.transforms  # noqa: F401
     from tram.pipeline.executor import PipelineExecutor
     from tram.pipeline.loader import load_pipeline_from_yaml
     with tempfile.TemporaryDirectory(prefix="tram-p1-python-oracle-") as dirname:

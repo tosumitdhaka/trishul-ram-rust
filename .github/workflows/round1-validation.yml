@@ -10,6 +10,9 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      # Frozen P1 permits one active pipeline across each test process.
+      RUST_TEST_THREADS: "1"
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

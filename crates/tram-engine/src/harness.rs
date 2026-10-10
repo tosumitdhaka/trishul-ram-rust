@@ -15,6 +15,7 @@ use cap_std::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
+    sync::atomic::AtomicBool as RunAtomicBool,
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
@@ -66,6 +67,7 @@ pub enum InjectedFault {
     FailBeforeSink(usize),
     FailDuringSinkWrite(usize),
     PauseBeforeSourceOpen,
+    PauseBeforeScratchOpen,
     PauseBeforeSinkOpen(usize),
     CancelAfterFirstWrite,
     /// Test-only pause after A write, allowing parent to issue SIGKILL.
@@ -100,6 +102,55 @@ pub struct RunOutcome {
     pub live_after_teardown: crate::budget::Totals,
     pub error: Option<String>,
 }
+/// One admitted P1 run per process. The guard is acquired before filesystem
+/// inspection and released on every return, cancellation, error or unwind.
+static ACTIVE_P1_RUN: RunAtomicBool = RunAtomicBool::new(false);
+struct ActiveP1Run;
+impl ActiveP1Run {
+    fn acquire() -> Result<Self, HarnessError> {
+        ACTIVE_P1_RUN.compare_exchange(
+            false, true, Ordering::AcqRel, Ordering::Acquire
+        ).map_err(|_| HarnessError::ResourceExhausted)?;
+        Ok(Self)
+    }
+}
+impl Drop for ActiveP1Run {
+    fn drop(&mut self) {
+        ACTIVE_P1_RUN.store(false, Ordering::Release);
+    }
+}
+
+/// Open a *single* named directory through a no-follow dirfd-relative syscall.
+/// Comparing the preflight inode to the opened handle defeats scratch->in
+/// symlink substitution and renamed-directory role confusion.
+fn open_role_dir(
+    root: &Dir,
+    name: &str,
+    expected: &cap_std::fs::Metadata,
+) -> Result<Dir, HarnessError> {
+    use cap_std::fs::MetadataExt;
+    let fd = rustix::fs::openat(
+        root,
+        name,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    ).map_err(|_| HarnessError::PathEscape)?;
+    let opened = rustix::fs::fstat(&fd).map_err(|_| HarnessError::PathEscape)?;
+    if opened.st_dev != expected.dev() || opened.st_ino != expected.ino() {
+        return Err(HarnessError::PathEscape);
+    }
+    // The path might have changed *after* open; the handle remains pinned.
+    // This second lookup is a refusal check, not a substitute for fstat.
+    let after = root.symlink_metadata(name).map_err(|_| HarnessError::PathEscape)?;
+    if after.file_type().is_symlink() || after.dev() != opened.st_dev || after.ino() != opened.st_ino {
+        return Err(HarnessError::PathEscape);
+    }
+    Ok(Dir::from(fd))
+}
+
 pub struct TestHarness;
 impl TestHarness {
     /// The sole effect entry: test_root must be a disposable trusted directory
@@ -142,6 +193,7 @@ impl TestHarness {
         caps: crate::budget::BudgetCaps,
         fault: InjectedFault,
     ) -> Result<RunOutcome, HarnessError> {
+        let _active_run = ActiveP1Run::acquire()?;
         if !plan.ephemeral_only
             || plan.contract_version != 1
             || plan.sinks.is_empty()
@@ -203,16 +255,32 @@ impl TestHarness {
         // opened root via '..' or attacker-swapped directory symlinks.
         let root =
             Dir::open_ambient_dir(test_root, ambient_authority()).map_err(|_| HarnessError::Io)?;
-        for sub in ["in", "scratch"] {
-            let meta = root.symlink_metadata(sub).map_err(|_| HarnessError::Io)?;
-            if meta.file_type().is_symlink() || !meta.is_dir() {
-                return Err(HarnessError::PathEscape);
-            }
+        use cap_std::fs::MetadataExt;
+        let input_preflight = root.symlink_metadata("in").map_err(|_| HarnessError::PathEscape)?;
+        let scratch_preflight = root.symlink_metadata("scratch").map_err(|_| HarnessError::PathEscape)?;
+        if input_preflight.file_type().is_symlink()
+            || scratch_preflight.file_type().is_symlink()
+            || !input_preflight.is_dir()
+            || !scratch_preflight.is_dir()
+            || input_preflight.dev() != scratch_preflight.dev()
+            || (input_preflight.dev(), input_preflight.ino())
+                == (scratch_preflight.dev(), scratch_preflight.ino())
+        {
+            return Err(HarnessError::PathEscape);
         }
-        let input = root.open_dir("in").map_err(|_| HarnessError::PathEscape)?;
-        let scratch = root
-            .open_dir("scratch")
-            .map_err(|_| HarnessError::PathEscape)?;
+        let input = open_role_dir(&root, "in", &input_preflight)?;
+        // Gate solely for deterministic sandbox-race regressions; no effects
+        // have occurred and neither a source read nor scratch create is allowed.
+        if fault == InjectedFault::PauseBeforeScratchOpen {
+            pause_for_adversarial_test(cancelled)?;
+        }
+        let scratch = open_role_dir(&root, "scratch", &scratch_preflight)?;
+        // Linux advisory flock on the opened scratch *directory descriptor*:
+        // shared-root contenders in other processes cannot have overlapping
+        // live ledgers. The kernel releases it on SIGKILL, preserving P1 crash
+        // semantics and avoiding a stale pathname lock file.
+        rustix::fs::flock(&scratch, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+            .map_err(|_| HarnessError::ResourceExhausted)?;
         // All reservations below follow backing buffer/record lifetime.
         let ledger = BudgetLedger::new(caps);
         let mut paths = Vec::new();

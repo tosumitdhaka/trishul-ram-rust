@@ -878,8 +878,20 @@ fn r2_m1_rotated_scratch_directory_cannot_multiply_process_run_budget() {
     let after = fs::metadata(&source).unwrap();
     assert_eq!(fs::read(&source).unwrap(), INPUT);
     assert_eq!(
-        (before.ino(), before.mode(), before.len(), before.mtime(), before.mtime_nsec()),
-        (after.ino(), after.mode(), after.len(), after.mtime(), after.mtime_nsec())
+        (
+            before.ino(),
+            before.mode(),
+            before.len(),
+            before.mtime(),
+            before.mtime_nsec()
+        ),
+        (
+            after.ino(),
+            after.mode(),
+            after.len(),
+            after.mtime(),
+            after.mtime_nsec()
+        )
     );
     child.kill().unwrap();
     assert!(!child.wait().unwrap().success());
@@ -1002,7 +1014,11 @@ fn r2_m2_child_swap_fifo_before_source_open() {
         std::thread::sleep(Duration::from_millis(1));
     }
     fs::rename(&source, &original).unwrap();
-    assert!(Command::new("mkfifo").arg(&source).status().unwrap().success());
+    assert!(Command::new("mkfifo")
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
     let outcome = handle.join().unwrap().unwrap();
     assert_eq!(outcome.status, EphemeralStatus::Failed);
     assert_eq!(outcome.error.as_deref(), Some("PathEscape"));
@@ -1012,8 +1028,20 @@ fn r2_m2_child_swap_fifo_before_source_open() {
     fs::rename(&original, &source).unwrap();
     let after = fs::metadata(&source).unwrap();
     assert_eq!(
-        (before.ino(), before.mode(), before.len(), before.mtime(), before.mtime_nsec()),
-        (after.ino(), after.mode(), after.len(), after.mtime(), after.mtime_nsec())
+        (
+            before.ino(),
+            before.mode(),
+            before.len(),
+            before.mtime(),
+            before.mtime_nsec()
+        ),
+        (
+            after.ino(),
+            after.mode(),
+            after.len(),
+            after.mtime(),
+            after.mtime_nsec()
+        )
     );
     assert_eq!(fs::read(&source).unwrap(), INPUT);
     assert_eq!(fs::read_dir(root.join("scratch")).unwrap().count(), 1);

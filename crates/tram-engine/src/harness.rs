@@ -682,7 +682,7 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             rustix::fs::Mode::empty(),
         )
         .map_err(|_| HarnessError::PathEscape)?;
-        let mut file = std::fs::File::from(fd);
+        let mut file = cap_std::fs::File::from(fd);
         let opened = file.metadata().map_err(|_| HarnessError::PathEscape)?;
         if !opened.is_file() {
             return Err(HarnessError::PathEscape);

@@ -436,3 +436,94 @@ fn r2_g1_fault_during_second_scratch_write_is_uncertain_and_leak_free() {
     assert_eq!(result.live_after_teardown, Default::default());
     assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(), bytes);
 }
+
+
+fn wait_for_run(root:&Root,slot:Option<&str>)->PathBuf{
+    let deadline=Instant::now()+Duration::from_secs(6);
+    loop{
+        if let Ok(entries)=fs::read_dir(root.path.join("scratch")){
+            for entry in entries.flatten(){
+                let run=entry.path();
+                let marker=slot.map(|x|run.join(x)).unwrap_or_else(||run.clone());
+                if marker.is_dir(){return run;}
+            }
+        }
+        assert!(Instant::now()<deadline,"race test did not reach deterministic hook");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+#[test]
+fn r2_g2_concurrent_final_source_symlink_swap_denies_escape(){
+    use std::os::unix::fs::symlink;
+    let t=Root::new();t.add("input.json",INPUT);
+    let outsider=Root::new(); outsider.add("secret.json",b"{\"secret\":true}");
+    let outside=outsider.path.join("in/secret.json");
+    let original=fs::read(&outside).unwrap();
+    let p=t.plan();let run_root=t.path.clone();
+    let handle=std::thread::spawn(move||TestHarness::start_with_fault(
+        &p,&run_root,&AtomicBool::new(false),InjectedFault::PauseBeforeSourceOpen,
+    ));
+    let _=wait_for_run(&t,None);
+    std::thread::sleep(Duration::from_millis(35));
+    fs::rename(t.path.join("in/input.json"),t.path.join("in/kept.json")).unwrap();
+    symlink(&outside,t.path.join("in/input.json")).unwrap();
+    let result=handle.join().unwrap();
+    match result{
+        Ok(ref out)=>{
+            assert_eq!(out.status,EphemeralStatus::Failed);
+            assert!(out.scratch_paths.is_empty());
+            assert_eq!(out.live_after_teardown,Default::default());
+        },
+        Err(e)=>assert!(matches!(e,HarnessError::PathEscape|HarnessError::Io)),
+    }
+    assert_eq!(fs::read(&outside).unwrap(),original);
+    assert_eq!(fs::read(t.path.join("in/kept.json")).unwrap(),INPUT);
+}
+#[test]
+fn r2_g2_hardlink_alias_to_outside_inode_denied(){
+    let t=Root::new();let outsider=Root::new();
+    outsider.add("secret.json",INPUT);
+    let secret=outsider.path.join("in/secret.json");
+    let before=fs::read(&secret).unwrap();
+    fs::hard_link(&secret,t.path.join("in/input.json")).unwrap();
+    let result=TestHarness::start(&t.plan(),&t.path,&AtomicBool::new(false)).unwrap();
+    assert_eq!(result.status,EphemeralStatus::Failed);
+    assert!(result.scratch_paths.is_empty());
+    assert_eq!(result.live_after_teardown,Default::default());
+    assert_eq!(fs::read(&secret).unwrap(),before);
+}
+#[test]
+fn r2_g2_sink_parent_swap_to_external_symlink_refuses_outside_write(){
+    use std::os::unix::fs::symlink;
+    let t=Root::new();t.add("input.json",INPUT);
+    let outsider=Root::new();
+    let plan=t.plan();let run_root=t.path.clone();
+    let handle=std::thread::spawn(move||TestHarness::start_with_fault(
+        &plan,&run_root,&AtomicBool::new(false),InjectedFault::PauseBeforeSinkOpen(0),
+    ));
+    let run=wait_for_run(&t,Some("a"));
+    fs::rename(run.join("a"),run.join("a-original")).unwrap();
+    symlink(outsider.path.join("scratch"),run.join("a")).unwrap();
+    let out=handle.join().unwrap().unwrap();
+    assert_eq!(out.status,EphemeralStatus::Failed);
+    assert!(out.scratch_paths.is_empty());
+    assert_eq!(out.live_after_teardown,Default::default());
+    assert_eq!(scratch_runs(&outsider),0);
+    assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(),INPUT);
+}
+#[test]
+fn r2_g2_existing_destination_exclusive_creation_fails_without_overwrite(){
+    let t=Root::new();t.add("input.json",INPUT);
+    let plan=t.plan();let run_root=t.path.clone();
+    let handle=std::thread::spawn(move||TestHarness::start_with_fault(
+        &plan,&run_root,&AtomicBool::new(false),InjectedFault::PauseBeforeSinkOpen(0),
+    ));
+    let run=wait_for_run(&t,Some("a"));
+    let target=run.join("a/output-a.json");
+    fs::write(&target,b"sentinel").unwrap();
+    let out=handle.join().unwrap().unwrap();
+    assert_eq!(out.status,EphemeralStatus::Failed);
+    assert_eq!(fs::read(target).unwrap(),b"sentinel");
+    assert_eq!(out.live_after_teardown,Default::default());
+    assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(),INPUT);
+}

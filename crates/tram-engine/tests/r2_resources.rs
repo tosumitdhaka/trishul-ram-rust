@@ -527,3 +527,42 @@ fn r2_g2_existing_destination_exclusive_creation_fails_without_overwrite(){
     assert_eq!(out.live_after_teardown,Default::default());
     assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(),INPUT);
 }
+
+
+fn process_highwater_kib()->u64{
+    fs::read_to_string("/proc/self/status").unwrap().lines()
+        .find(|line|line.starts_with("VmHWM:")).unwrap()
+        .split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+#[test]
+fn r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown(){
+    let root=Root::new();
+    let payload="z".repeat(800*1024);
+    let input=format!(r#"[{{"old_id":"A","metric":12,"payload":"{payload}"}}]"#);
+    for n in 0..3 {
+        root.add(&format!("file-{n:03}.json"),input.as_bytes());
+    }
+    let before=process_highwater_kib();
+    let result=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap();
+    let after=process_highwater_kib();
+    assert_eq!(result.status,EphemeralStatus::Completed,"{:?}",result.error);
+    assert_eq!(result.source_units.len(),3);
+    assert_eq!(result.peaks.records,1);
+    assert!(result.peaks.raw_bytes>=800*1024);
+    assert!(result.peaks.decoded_bytes>=800*1024);
+    assert!(result.peaks.branch_bytes.iter().all(|v|*v>2*1024*1024));
+    assert!(result.peaks.live_bytes<64*1024*1024);
+    assert!(result.peaks.scratch_bytes>4*1024*1024);
+    assert_eq!(result.peaks.scratch_artifacts,2);
+    assert_eq!(result.live_after_teardown,Default::default());
+    assert!(after>=before);
+    let first=codec::decode(&fs::read(&result.scratch_paths[0]).unwrap()).unwrap();
+    let second=codec::decode(&fs::read(&result.scratch_paths[1]).unwrap()).unwrap();
+    assert_eq!(first.len(),3);
+    assert_eq!(second.len(),3);
+    for n in 0..3{assert_eq!(fs::read(root.path.join(format!("in/file-{n:03}.json"))).unwrap(),input.as_bytes());}
+    println!("R2_G1_MULTIFILE_RSS_VMHWM_KIB_BEFORE={before}");
+    println!("R2_G1_MULTIFILE_RSS_VMHWM_KIB_AFTER={after}");
+    println!("R2_G1_MULTIFILE_LEDGER_PEAKS={:?}",result.peaks);
+    println!("R2_G1_MULTIFILE_RESERVATIONS_RELEASED=true");
+}

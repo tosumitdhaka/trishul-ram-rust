@@ -44,6 +44,9 @@ jobs:
       - name: P1 resource, fault and RSS regression evidence
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test r2_resources --locked -- --nocapture
+      - name: R2 G1 standalone worst-case sampled process RSS HWM
+        if: always()
+        run: cargo +1.88.0 test -p tram-engine --test r2_resources r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown --locked -- --exact --nocapture
       - name: R2 G4 exact locked crate archive, notice and RustSec snapshot
         if: always()
         shell: bash

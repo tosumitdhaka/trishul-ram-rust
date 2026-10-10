@@ -209,6 +209,28 @@ impl BudgetLedger {
             amount,
         })
     }
+    /// Atomically account owned backing bytes in their category and run-wide
+    /// live total. Each move-only guard must outlive the backing allocation.
+    pub fn reserve_owned(&self, category: Category, amount: usize)
+        -> Result<Vec<Reservation>, BudgetError>
+    {
+        if matches!(category, Category::LiveBytes | Category::ScratchBytes | Category::ScratchArtifacts
+            | Category::SinkIo | Category::RawBuffers | Category::Records) {
+            return Err(BudgetError::InvalidBranch);
+        }
+        let live = self.reserve(Category::LiveBytes, amount)?;
+        let scoped = self.reserve(category, amount)?;
+        Ok(vec![live, scoped])
+    }
+    /// Scratch usage is run-cumulative: callers must retain returned guards
+    /// until the complete run is torn down, even when the OS write fails.
+    pub fn reserve_scratch(&self, bytes: usize)
+        -> Result<Vec<Reservation>, BudgetError>
+    {
+        let artifacts = self.reserve(Category::ScratchArtifacts, 1)?;
+        let written = self.reserve(Category::ScratchBytes, bytes)?;
+        Ok(vec![artifacts, written])
+    }
     /// All-or-none branch queue capacity. If any reservation fails,
     /// already acquired reservations are dropped before returning.
     pub fn reserve_fanout(&self, branch_bytes: &[usize]) -> Result<Vec<Reservation>, BudgetError> {
@@ -249,6 +271,39 @@ impl Drop for Reservation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn res_scoped_ownership_rolls_back_on_parent_or_child_refusal() {
+        let budget = BudgetLedger::new(BudgetCaps {
+            live_bytes: 40, decoded_bytes: 10, scratch_bytes: 4,
+            scratch_artifacts: 2, ..BudgetCaps::default()
+        });
+        let decoded = budget.reserve_owned(Category::DecodedBytes, 8).unwrap();
+        assert_eq!(budget.current().live_bytes, 8);
+        assert_eq!(budget.current().decoded_bytes, 8);
+        assert!(matches!(budget.reserve_owned(Category::DecodedBytes, 3),
+            Err(BudgetError::ResourceExhausted)));
+        assert_eq!(budget.current().live_bytes, 8, "rolled back parent");
+        let scratch = budget.reserve_scratch(4).unwrap();
+        assert!(matches!(budget.reserve_scratch(1), Err(BudgetError::ResourceExhausted)));
+        assert_eq!(budget.current().scratch_artifacts, 1);
+        drop((decoded, scratch));
+        assert_eq!(budget.current(), Totals::default());
+    }
+    #[test]
+    fn res_run_cumulative_scratch_refuses_101st_even_with_dropped_io() {
+        let ledger = BudgetLedger::p1();
+        let mut held = Vec::new();
+        for _ in 0..SCRATCH_ARTIFACT_MAX {
+            held.push(ledger.reserve_scratch(1).unwrap());
+            let io = ledger.reserve(Category::SinkIo, 1).unwrap();
+            drop(io);
+        }
+        assert_eq!(ledger.current().scratch_artifacts, 100);
+        assert_eq!(ledger.current().scratch_bytes, 100);
+        assert!(matches!(ledger.reserve_scratch(1), Err(BudgetError::ResourceExhausted)));
+        drop(held);
+        assert_eq!(ledger.current(), Totals::default());
+    }
     #[test]
     fn res_ledger_raii_and_peak_accounting() {
         let ledger = BudgetLedger::p1();

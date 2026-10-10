@@ -815,3 +815,32 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
     }
     Ok(())
 }
+
+
+#[cfg(test)]
+mod bounded_backpressure_tests {
+    use super::*;
+    use crate::budget::{BudgetCaps, Totals};
+    #[test]
+    fn r2_g1_full_branch_stops_admission_before_fanout_and_cancel_unblocks() {
+        let ledger=BudgetLedger::new(BudgetCaps {
+            branch_bytes:0,total_pending:0,..BudgetCaps::default()
+        });
+        let cancel=AtomicBool::new(false);
+        let started=std::time::Instant::now();
+        assert!(matches!(
+            reserve_fanout_cancellable(&ledger,&[1,1],&cancel),
+            Err(HarnessError::ResourceExhausted)
+        ));
+        assert!(started.elapsed()>=std::time::Duration::from_millis(100));
+        assert_eq!(ledger.current(),Totals::default());
+        cancel.store(true,Ordering::Release);
+        let cancelled=std::time::Instant::now();
+        assert!(matches!(
+            reserve_fanout_cancellable(&ledger,&[1,1],&cancel),
+            Err(HarnessError::UnsafePlan)
+        ));
+        assert!(cancelled.elapsed()<std::time::Duration::from_secs(1));
+        assert_eq!(ledger.current(),Totals::default());
+    }
+}

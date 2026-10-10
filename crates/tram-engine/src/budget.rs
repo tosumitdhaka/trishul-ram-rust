@@ -21,8 +21,15 @@ pub const SCRATCH_ARTIFACT_MAX: usize = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Category {
-    RawBytes, RawBuffers, DecodedBytes, Records,
-    BranchBytes(usize), SinkIo, LiveBytes, ScratchBytes, ScratchArtifacts,
+    RawBytes,
+    RawBuffers,
+    DecodedBytes,
+    Records,
+    BranchBytes(usize),
+    SinkIo,
+    LiveBytes,
+    ScratchBytes,
+    ScratchArtifacts,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Totals {
@@ -124,7 +131,11 @@ impl BudgetCaps {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BudgetError { ResourceExhausted, ArithmeticOverflow, InvalidBranch }
+pub enum BudgetError {
+    ResourceExhausted,
+    ArithmeticOverflow,
+    InvalidBranch,
+}
 struct Shared {
     current: Totals,
     peaks: Totals,
@@ -133,7 +144,9 @@ struct Shared {
 #[derive(Clone)]
 pub struct BudgetLedger(Rc<RefCell<Shared>>);
 impl BudgetLedger {
-    pub fn p1() -> Self { Self::new(BudgetCaps::default()) }
+    pub fn p1() -> Self {
+        Self::new(BudgetCaps::default())
+    }
     pub fn new(requested: BudgetCaps) -> Self {
         Self(Rc::new(RefCell::new(Shared {
             current: Totals::default(),
@@ -141,26 +154,60 @@ impl BudgetLedger {
             caps: BudgetCaps::default().lowered(requested),
         })))
     }
-    pub fn current(&self) -> Totals { self.0.borrow().current }
-    pub fn peaks(&self) -> Totals { self.0.borrow().peaks }
-    pub fn caps(&self) -> BudgetCaps { self.0.borrow().caps }
+    pub fn current(&self) -> Totals {
+        self.0.borrow().current
+    }
+    pub fn peaks(&self) -> Totals {
+        self.0.borrow().peaks
+    }
+    pub fn caps(&self) -> BudgetCaps {
+        self.0.borrow().caps
+    }
     pub fn reserve(&self, category: Category, amount: usize) -> Result<Reservation, BudgetError> {
         let mut shared = self.0.borrow_mut();
-        let cap = shared.caps.cap(category).ok_or(BudgetError::InvalidBranch)?;
-        let current = shared.current.value(category).ok_or(BudgetError::InvalidBranch)?;
-        let next = current.checked_add(amount).ok_or(BudgetError::ArithmeticOverflow)?;
-        if next > cap { return Err(BudgetError::ResourceExhausted); }
+        let cap = shared
+            .caps
+            .cap(category)
+            .ok_or(BudgetError::InvalidBranch)?;
+        let current = shared
+            .current
+            .value(category)
+            .ok_or(BudgetError::InvalidBranch)?;
+        let next = current
+            .checked_add(amount)
+            .ok_or(BudgetError::ArithmeticOverflow)?;
+        if next > cap {
+            return Err(BudgetError::ResourceExhausted);
+        }
         if matches!(category, Category::BranchBytes(_)) {
-            let pending = shared.current.branch_bytes.iter().try_fold(0usize, |acc,x| acc.checked_add(*x))
+            let pending = shared
+                .current
+                .branch_bytes
+                .iter()
+                .try_fold(0usize, |acc, x| acc.checked_add(*x))
                 .ok_or(BudgetError::ArithmeticOverflow)?;
-            if pending.checked_add(amount).ok_or(BudgetError::ArithmeticOverflow)? > shared.caps.total_pending {
+            if pending
+                .checked_add(amount)
+                .ok_or(BudgetError::ArithmeticOverflow)?
+                > shared.caps.total_pending
+            {
                 return Err(BudgetError::ResourceExhausted);
             }
         }
-        *shared.current.cell_mut(category).ok_or(BudgetError::InvalidBranch)? = next;
-        let peak = shared.peaks.cell_mut(category).ok_or(BudgetError::InvalidBranch)?;
+        *shared
+            .current
+            .cell_mut(category)
+            .ok_or(BudgetError::InvalidBranch)? = next;
+        let peak = shared
+            .peaks
+            .cell_mut(category)
+            .ok_or(BudgetError::InvalidBranch)?;
         *peak = (*peak).max(next);
-        Ok(Reservation { ledger: self.clone(), category, amount })
+        Ok(Reservation {
+            ledger: self.clone(),
+            category,
+            amount,
+        })
     }
     /// All-or-none branch queue capacity. If any reservation fails,
     /// already acquired reservations are dropped before returning.
@@ -182,13 +229,21 @@ pub struct Reservation {
     category: Category,
     amount: usize,
 }
-impl Reservation { pub fn amount(&self) -> usize { self.amount } }
+impl Reservation {
+    pub fn amount(&self) -> usize {
+        self.amount
+    }
+}
 impl Drop for Reservation {
     fn drop(&mut self) {
         let mut shared = self.ledger.0.borrow_mut();
-        let current = shared.current.cell_mut(self.category)
+        let current = shared
+            .current
+            .cell_mut(self.category)
             .expect("category admitted when reservation created");
-        *current = current.checked_sub(self.amount).expect("balanced move-only reservation");
+        *current = current
+            .checked_sub(self.amount)
+            .expect("balanced move-only reservation");
     }
 }
 #[cfg(test)]
@@ -211,33 +266,61 @@ mod tests {
     }
     #[test]
     fn res_checked_overflow_and_limits_cannot_be_raised() {
-        let ledger = BudgetLedger::new(BudgetCaps { raw_bytes: usize::MAX, ..BudgetCaps::default() });
+        let ledger = BudgetLedger::new(BudgetCaps {
+            raw_bytes: usize::MAX,
+            ..BudgetCaps::default()
+        });
         assert_eq!(ledger.caps().raw_bytes, RAW_FILE_MAX);
-        assert!(matches!(ledger.reserve(Category::RawBytes, RAW_FILE_MAX + 1), Err(BudgetError::ResourceExhausted)));
-        assert!(matches!(ledger.reserve(Category::BranchBytes(2), 1), Err(BudgetError::InvalidBranch)));
-        let r = ledger.reserve(Category::ScratchBytes, SCRATCH_RUN_MAX).unwrap();
-        assert!(matches!(ledger.reserve(Category::ScratchBytes, usize::MAX), Err(BudgetError::ArithmeticOverflow)));
+        assert!(matches!(
+            ledger.reserve(Category::RawBytes, RAW_FILE_MAX + 1),
+            Err(BudgetError::ResourceExhausted)
+        ));
+        assert!(matches!(
+            ledger.reserve(Category::BranchBytes(2), 1),
+            Err(BudgetError::InvalidBranch)
+        ));
+        let r = ledger
+            .reserve(Category::ScratchBytes, SCRATCH_RUN_MAX)
+            .unwrap();
+        assert!(matches!(
+            ledger.reserve(Category::ScratchBytes, usize::MAX),
+            Err(BudgetError::ArithmeticOverflow)
+        ));
         drop(r);
         assert_eq!(ledger.current(), Totals::default());
     }
     #[test]
     fn res_fanout_is_atomic_and_reserves_before_dispatch() {
-        let ledger = BudgetLedger::new(BudgetCaps { branch_bytes: 10, total_pending: 14, ..BudgetCaps::default() });
-        let a = ledger.reserve_fanout(&[8,6]).unwrap();
-        assert_eq!(ledger.current().branch_bytes, [8,6]);
-        assert!(matches!(ledger.reserve_fanout(&[3,1]), Err(BudgetError::ResourceExhausted)));
-        assert_eq!(ledger.current().branch_bytes, [8,6]);
+        let ledger = BudgetLedger::new(BudgetCaps {
+            branch_bytes: 10,
+            total_pending: 14,
+            ..BudgetCaps::default()
+        });
+        let a = ledger.reserve_fanout(&[8, 6]).unwrap();
+        assert_eq!(ledger.current().branch_bytes, [8, 6]);
+        assert!(matches!(
+            ledger.reserve_fanout(&[3, 1]),
+            Err(BudgetError::ResourceExhausted)
+        ));
+        assert_eq!(ledger.current().branch_bytes, [8, 6]);
         drop(a);
         assert_eq!(ledger.current(), Totals::default());
     }
     #[test]
     fn res_zero_source_and_record_limits() {
-        let ledger = BudgetLedger::new(BudgetCaps { records: 2, decoded_bytes: 3, ..BudgetCaps::default() });
+        let ledger = BudgetLedger::new(BudgetCaps {
+            records: 2,
+            decoded_bytes: 3,
+            ..BudgetCaps::default()
+        });
         let one = ledger.reserve(Category::Records, 2).unwrap();
-        assert!(matches!(ledger.reserve(Category::Records, 1), Err(BudgetError::ResourceExhausted)));
+        assert!(matches!(
+            ledger.reserve(Category::Records, 1),
+            Err(BudgetError::ResourceExhausted)
+        ));
         let b = ledger.reserve(Category::DecodedBytes, 3).unwrap();
         assert!(ledger.reserve(Category::DecodedBytes, 1).is_err());
-        drop((one,b));
+        drop((one, b));
         assert_eq!(ledger.current(), Totals::default());
     }
 }

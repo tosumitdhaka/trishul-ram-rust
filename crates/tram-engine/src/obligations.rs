@@ -287,4 +287,25 @@ mod tests {
         b.simulate_checkpoint(true).unwrap();
         assert!(b.checkpoint_eligible());
     }
+    #[test]
+    fn res_04_p2_expansion_64_allowed_65_refused_without_logical_ack() {
+        use crate::budget::{BudgetCaps, BudgetLedger, Category};
+        // P2-only expansion budget simulator: no expand operator is admitted by
+        // the frozen P1 compiler and no child is emitted by this test.
+        let ledger = BudgetLedger::new(BudgetCaps {
+            records: 64, ..BudgetCaps::default()
+        });
+        let children = ledger.reserve(Category::Records, 64).unwrap();
+        assert_eq!(ledger.current().records, 64);
+        assert!(ledger.reserve(Category::Records, 1).is_err());
+        let mut barrier=SimulatedBarrier::new();
+        let r=barrier.open_record().unwrap();
+        barrier.branch(r,0,Disposition::Pending).unwrap();
+        barrier.seal().unwrap();
+        assert!(!barrier.logical_decided());
+        assert!(!barrier.checkpoint_eligible());
+        drop(children);
+        assert_eq!(ledger.current().records, 0);
+    }
+
 }

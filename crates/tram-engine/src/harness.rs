@@ -72,12 +72,18 @@ pub enum InjectedFault {
     PauseAfterFirstWrite,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SourceDisposition {
+    Pending, HasRecords, Empty, FilteredGlobal, Failed,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceEvidence {
     pub relative_name: String,
     pub sha256: String,
     pub byte_count: usize,
     pub record_count: usize,
     pub filtered_global: usize,
+    pub disposition: SourceDisposition,
+    pub run_failed: bool,
 }
 #[derive(Clone, Debug)]
 pub struct RunOutcome {
@@ -263,6 +269,12 @@ impl TestHarness {
         match inner {
             Ok(()) => outcome.status = EphemeralStatus::Completed,
             Err(e) => {
+                for unit in &mut outcome.source_units {
+                    if unit.disposition == SourceDisposition::Pending {
+                        unit.disposition = SourceDisposition::Failed;
+                    }
+                    unit.run_failed = true;
+                }
                 outcome.status =
                     if cancelled.load(Ordering::Acquire) || matches!(e, HarnessError::UnsafePlan) {
                         EphemeralStatus::Cancelled
@@ -523,6 +535,16 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         }
         let hash = Sha256::digest(&bytes);
         let digest = format!("{hash:x}");
+        let unit_index=out.source_units.len();
+        out.source_units.push(SourceEvidence {
+            relative_name: name.clone(),
+            sha256: digest.clone(),
+            byte_count: bytes.len(),
+            record_count: 0,
+            filtered_global: 0,
+            disposition: SourceDisposition::Pending,
+            run_failed: false,
+        });
         // The preflight walks the borrowed wire bytes. Its reservation is a
         // conservative ownership ceiling, acquired before Datum materializes.
         let budgeted_upper = estimate_json_allocation_ceiling(&bytes)?;
@@ -538,13 +560,7 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let unit_id = SourceUnitId::new(format!("{name}:{digest}"))
             .map_err(|_| HarnessError::InvalidSource)?;
-        let mut src = SourceEvidence {
-            relative_name: name.clone(),
-            sha256: digest,
-            byte_count: bytes.len(),
-            record_count: rows.len(),
-            filtered_global: 0,
-        };
+        out.source_units[unit_index].record_count=rows.len();
         for (ordinal, data) in rows.into_iter().enumerate() {
             if cancelled.load(Ordering::Acquire) {
                 return Err(HarnessError::UnsafePlan);
@@ -571,7 +587,7 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             let disposition = transform::apply(&mut item, &plan.transforms)
                 .map_err(|_| HarnessError::MalformedSource)?;
             if disposition == RecordDisposition::FilteredGlobal {
-                src.filtered_global += 1;
+                out.source_units[unit_index].filtered_global += 1;
                 continue;
             }
             // Every branch clone is independent; no cross-sink mutable alias.
@@ -616,7 +632,10 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
                 branches[slot].push(branch);
             }
         }
-        out.source_units.push(src);
+        let unit=&mut out.source_units[unit_index];
+        unit.disposition=if unit.record_count==0 { SourceDisposition::Empty }
+            else if unit.filtered_global==unit.record_count { SourceDisposition::FilteredGlobal }
+            else { SourceDisposition::HasRecords };
     }
     if cancelled.load(Ordering::Acquire) {
         return Err(HarnessError::UnsafePlan);

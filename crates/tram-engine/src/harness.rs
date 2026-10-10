@@ -68,6 +68,8 @@ pub enum InjectedFault {
     None,
     FailBeforeSink(usize),
     CancelAfterFirstWrite,
+    /// Test-only pause after A write, allowing parent to issue SIGKILL.
+    PauseAfterFirstWrite,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceEvidence {
@@ -452,6 +454,17 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         if fault == InjectedFault::CancelAfterFirstWrite && slot == 0 {
             cancelled.store(true, Ordering::Release);
             return Err(HarnessError::UnsafePlan);
+        }
+        if fault == InjectedFault::PauseAfterFirstWrite && slot == 0 {
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_secs(20) {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(HarnessError::UnsafePlan);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            // The watchdog bounds a missed-kill regression; no success claim.
+            return Err(HarnessError::Io);
         }
     }
     Ok(())

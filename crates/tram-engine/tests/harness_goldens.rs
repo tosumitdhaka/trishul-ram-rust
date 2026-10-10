@@ -40,22 +40,16 @@ impl DisposableRoot {
         fs::write(self.root.join("in").join(name), bytes).unwrap();
     }
     fn plan(&self) -> tram_config::ValidatedPlan {
-        let vars = BTreeMap::from([
-            (
-                "TRAM_P1_INPUT_DIR".into(),
-                self.root.join("in").to_string_lossy().into_owned(),
-            ),
-            (
-                "TRAM_P1_SCRATCH_A".into(),
-                self.root.join("scratch/a").to_string_lossy().into_owned(),
-            ),
-            (
-                "TRAM_P1_SCRATCH_B".into(),
-                self.root.join("scratch/b").to_string_lossy().into_owned(),
-            ),
-        ]);
-        compile_p1_builtin(YAML, &vars).expect("golden P1 plan compilation")
+        plan_for(&self.root)
     }
+}
+fn plan_for(root: &Path) -> tram_config::ValidatedPlan {
+    let vars = BTreeMap::from([
+        ("TRAM_P1_INPUT_DIR".into(), root.join("in").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_A".into(), root.join("scratch/a").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_B".into(), root.join("scratch/b").to_string_lossy().into_owned()),
+    ]);
+    compile_p1_builtin(YAML, &vars).expect("golden P1 plan")
 }
 impl Drop for DisposableRoot {
     fn drop(&mut self) {
@@ -222,4 +216,67 @@ fn comp_f01_malformed_json_run_fails_without_scratch_artifact() {
     );
     assert!(out.scratch_paths.is_empty());
     assert_eq!(fs::read(t.root.join("in/bad.json")).unwrap(), b"[{},12]");
+}
+
+#[test]
+fn p1_crash_03_child_worker_after_a_write(){
+    // Child runs only under explicitly selected test target and disposable root.
+    let Ok(root) = std::env::var("TRAM_P1_CHILD_ROOT") else { return; };
+    let root = PathBuf::from(root);
+    let cancelled = AtomicBool::new(false);
+    let result = TestHarness::start_with_fault(
+        &plan_for(&root),&root,&cancelled,InjectedFault::PauseAfterFirstWrite,
+    );
+    panic!("P1 subprocess unexpectedly returned instead of being killed: {result:?}");
+}
+#[test]
+fn p1_crash_03_os_kill_after_scratch_a_and_independent_new_run() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{Command,Stdio};
+    use std::time::{Duration,Instant};
+
+    let t=DisposableRoot::new();
+    t.file("input.json",INPUT);
+    let source=t.root.join("in/input.json");
+    let (original,meta)=source_snapshot(&source);
+    let mut child=Command::new(std::env::current_exe().expect("integration executable"))
+        .arg("--exact").arg("p1_crash_03_child_worker_after_a_write").arg("--nocapture")
+        .env("TRAM_P1_CHILD_ROOT",t.root.to_str().expect("utf8 root"))
+        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().expect("spawn worker");
+    let deadline=Instant::now()+Duration::from_secs(12);
+    let scratch=t.root.join("scratch");
+    let mut partial:Option<PathBuf>=None;
+    while Instant::now()<deadline {
+        for run in fs::read_dir(&scratch).expect("run dirs") {
+            let path=run.expect("entry").path().join("a/output-a.json");
+            if let Ok(bytes)=fs::read(&path) {
+                if codec::decode(&bytes).ok()==codec::decode(EXPECTED_A).ok() {
+                    partial=Some(path);break;
+                }
+            }
+        }
+        if partial.is_some(){break;}
+        if let Ok(Some(exited))=child.try_wait() {
+            panic!("child exited before SIGKILL: {exited}");
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    if partial.is_none() {
+        let _=child.kill();let _=child.wait();
+        panic!("child never reached partial scratch write");
+    }
+    child.kill().expect("OS kill");
+    let status=child.wait().expect("OS wait");
+    assert_eq!(status.signal(),Some(9),"required actual SIGKILL");
+    let partial_file=partial.unwrap();
+    assert_eq!(codec::decode(&fs::read(&partial_file).unwrap()).unwrap(),codec::decode(EXPECTED_A).unwrap());
+    assert_eq!(fs::read(&source).unwrap(),original,"kill must not mutate source bytes");
+    assert_eq!(fs::metadata(&source).unwrap().modified().unwrap(),meta.modified().unwrap());
+    let independent=TestHarness::start(&t.plan(),&t.root,&AtomicBool::new(false)).unwrap();
+    assert_eq!(independent.status,EphemeralStatus::Completed);
+    assert_ne!(independent.scratch_paths[0],partial_file);
+    assert_eq!(inspect(&independent,1),codec::decode(EXPECTED_B).unwrap());
+    println!("P1_CRASH_03_OS_KILL=SIGKILL_9");
+    println!("P1_CRASH_03_INPUT_UNCHANGED=true");
+    println!("P1_CRASH_03_INDEPENDENT_NEW_RUN=true");
 }

@@ -41,6 +41,9 @@ jobs:
       - name: Focused P1 engine pure and sandbox integration
         if: always()
         run: cargo +1.88.0 test -p tram-engine --locked
+      - name: P1 real OS subprocess SIGKILL evidence
+        if: always()
+        run: cargo +1.88.0 test -p tram-engine --test harness_goldens p1_crash_03_os_kill --locked -- --nocapture
   python-oracle:
     runs-on: ubuntu-latest
     timeout-minutes: 15

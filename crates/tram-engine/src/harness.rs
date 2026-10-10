@@ -87,6 +87,7 @@ pub struct RunOutcome {
     pub source_units: Vec<SourceEvidence>,
     pub scratch_paths: Vec<PathBuf>,
     pub peaks: crate::budget::Totals,
+    pub live_after_teardown: crate::budget::Totals,
     pub error: Option<String>,
 }
 pub struct TestHarness;
@@ -104,6 +105,24 @@ impl TestHarness {
         plan: &ValidatedPlan,
         test_root: &Path,
         cancelled: &AtomicBool,
+        fault: InjectedFault,
+    ) -> Result<RunOutcome, HarnessError> {
+        Self::start_with_caps_and_fault(plan, test_root, cancelled,
+            crate::budget::BudgetCaps::default(), fault)
+    }
+    /// Lower-only, isolated deterministic limits for resource-pressure tests.
+    /// Never raises frozen P1 caps.
+    pub fn start_with_caps(
+        plan: &ValidatedPlan, test_root: &Path, cancelled: &AtomicBool,
+        caps: crate::budget::BudgetCaps,
+    ) -> Result<RunOutcome, HarnessError> {
+        Self::start_with_caps_and_fault(plan,test_root,cancelled,caps,InjectedFault::None)
+    }
+    pub fn start_with_caps_and_fault(
+        plan: &ValidatedPlan,
+        test_root: &Path,
+        cancelled: &AtomicBool,
+        caps: crate::budget::BudgetCaps,
         fault: InjectedFault,
     ) -> Result<RunOutcome, HarnessError> {
         if !plan.ephemeral_only
@@ -178,7 +197,7 @@ impl TestHarness {
             .open_dir("scratch")
             .map_err(|_| HarnessError::PathEscape)?;
         // All reservations below follow backing buffer/record lifetime.
-        let ledger = BudgetLedger::p1();
+        let ledger = BudgetLedger::new(caps);
         let mut paths = Vec::new();
         for entry in input.read_dir(".").map_err(|_| HarnessError::Io)? {
             let entry = entry.map_err(|_| HarnessError::Io)?;
@@ -216,6 +235,7 @@ impl TestHarness {
             source_units: Vec::new(),
             scratch_paths: Vec::new(),
             peaks: ledger.peaks(),
+            live_after_teardown: crate::budget::Totals::default(),
             error: None,
         };
         let inner = execute(
@@ -232,6 +252,7 @@ impl TestHarness {
             &mut outcome,
         );
         outcome.peaks = ledger.peaks();
+        outcome.live_after_teardown = ledger.current();
         match inner {
             Ok(()) => outcome.status = EphemeralStatus::Completed,
             Err(e) => {

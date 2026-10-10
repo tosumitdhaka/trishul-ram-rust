@@ -320,33 +320,46 @@ fn same_source_identity(a: &cap_std::fs::Metadata, b: &cap_std::fs::Metadata) ->
 /// Borrowed lexical preflight of *top-level* JSON object records. Nested
 /// object values are not source records. The full decoder still rejects
 /// malformed documents; this preflight only obtains pre-materialization quota.
-fn preflight_root_record_count(input:&[u8])->Result<usize,HarnessError>{
-    let root=input.iter().copied().find(|b|!matches!(*b,b' '|b'\r'|b'\n'|b'\t'));
-    let mut count=if root==Some(b'{'){1usize}else{0usize};
-    let array_root=root==Some(b'[');
-    let mut level=0usize;
-    let mut quoted=false;
-    let mut escaped=false;
-    for &b in input{
+fn preflight_root_record_count(input: &[u8]) -> Result<usize, HarnessError> {
+    let root = input
+        .iter()
+        .copied()
+        .find(|b| !matches!(*b, b' ' | b'\r' | b'\n' | b'\t'));
+    let mut count = if root == Some(b'{') { 1usize } else { 0usize };
+    let array_root = root == Some(b'[');
+    let mut level = 0usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for &b in input {
         if quoted {
-            if escaped{escaped=false;}
-            else if b==b'\\'{escaped=true;}
-            else if b==b'"'{quoted=false;}
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                quoted = false;
+            }
             continue;
         }
-        match b{
-            b'"'=>quoted=true,
-            b'['|b'{' =>{
-                if b==b'{'&&array_root&&level==1{
-                    count=count.checked_add(1).ok_or(HarnessError::ResourceExhausted)?;
+        match b {
+            b'"' => quoted = true,
+            b'[' | b'{' => {
+                if b == b'{' && array_root && level == 1 {
+                    count = count
+                        .checked_add(1)
+                        .ok_or(HarnessError::ResourceExhausted)?;
                 }
-                level=level.checked_add(1).ok_or(HarnessError::ResourceExhausted)?;
-            },
-            b']'|b'}'=>level=level.saturating_sub(1),
-            _=>{},
+                level = level
+                    .checked_add(1)
+                    .ok_or(HarnessError::ResourceExhausted)?;
+            }
+            b']' | b'}' => level = level.saturating_sub(1),
+            _ => {}
         }
     }
-    if count>RECORDS_PER_SOURCE_MAX{return Err(HarnessError::ResourceExhausted);}
+    if count > RECORDS_PER_SOURCE_MAX {
+        return Err(HarnessError::ResourceExhausted);
+    }
     Ok(count)
 }
 fn estimate_json_allocation_ceiling(input: &[u8]) -> Result<usize, HarnessError> {
@@ -587,11 +600,12 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         let _decoded_charge = ledger
             .reserve_owned(Category::DecodedBytes, budgeted_upper)
             .map_err(|_| HarnessError::ResourceExhausted)?;
-        let reserved_records=preflight_root_record_count(&bytes)?;
-        let _record_count=ledger.reserve(Category::Records,reserved_records)
-            .map_err(|_|HarnessError::ResourceExhausted)?;
-        let rows=codec::decode(&bytes).map_err(|_|HarnessError::MalformedSource)?;
-        if rows.len()!=reserved_records || rows.len()>RECORDS_PER_SOURCE_MAX{
+        let reserved_records = preflight_root_record_count(&bytes)?;
+        let _record_count = ledger
+            .reserve(Category::Records, reserved_records)
+            .map_err(|_| HarnessError::ResourceExhausted)?;
+        let rows = codec::decode(&bytes).map_err(|_| HarnessError::MalformedSource)?;
+        if rows.len() != reserved_records || rows.len() > RECORDS_PER_SOURCE_MAX {
             return Err(HarnessError::ResourceExhausted);
         }
         let unit_id = SourceUnitId::new(format!("{name}:{digest}"))

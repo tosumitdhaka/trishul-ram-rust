@@ -5,7 +5,7 @@
 compile_error!("P1 effectful test harness is supported only on validated Linux; fail closed.");
 use crate::{
     budget::{
-        BudgetLedger, Category, BRANCH_PENDING_MAX, ENCODED_RECORD_MAX, RAW_FILE_MAX,
+        BudgetLedger, Category, BRANCH_PENDING_MAX, RAW_FILE_MAX,
         RECORDS_PER_SOURCE_MAX,
     },
     codec,

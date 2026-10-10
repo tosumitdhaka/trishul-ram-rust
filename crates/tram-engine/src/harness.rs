@@ -496,18 +496,20 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         if !same_source_identity(&source, &opened) {
             return Err(HarnessError::PathEscape);
         }
-        let actual_capacity = (opened.len() as usize)
-            .checked_add(1)
-            .ok_or(HarnessError::ResourceExhausted)?;
+        // Reserve *exact* opened size. A separate one-byte stack read
+        // detects growth without allocating an uncharged 4MiB+1 vector.
+        let actual_capacity = opened.len() as usize;
         let _raw_charge = ledger
             .reserve_owned(Category::RawBytes, actual_capacity)
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let mut bytes = Vec::with_capacity(actual_capacity);
         std::io::Read::by_ref(&mut file)
-            .take((RAW_FILE_MAX + 1) as u64)
+            .take(actual_capacity as u64)
             .read_to_end(&mut bytes)
             .map_err(|_| HarnessError::Io)?;
-        if bytes.len() > RAW_FILE_MAX
+        let mut overrun = [0u8;1];
+        let grew = file.read(&mut overrun).map_err(|_| HarnessError::Io)? != 0;
+        if grew || bytes.len() != actual_capacity
             || !same_source_identity(&opened, &file.metadata().map_err(|_| HarnessError::Io)?)
             || !same_source_identity(
                 &opened,

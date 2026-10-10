@@ -378,26 +378,6 @@ fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize, HarnessErro
         })
         .ok_or(HarnessError::ResourceExhausted)
 }
-fn estimate_encoded_ceiling(rows: &[RecordEnvelope]) -> Result<usize, HarnessError> {
-    // Unicode escaping can reach six ASCII bytes per UTF-8 code point.
-    // The +256 per record covers key delimiters and array metadata. The
-    // hard per-branch cap is enforced *before* encoder allocation.
-    let size = rows
-        .iter()
-        .try_fold(2usize, |n, row| {
-            estimate_envelope_owned(row)
-                .ok()
-                .and_then(|v| v.checked_mul(6))
-                .and_then(|v| v.checked_add(256))
-                .and_then(|v| n.checked_add(v))
-        })
-        .ok_or(HarnessError::ResourceExhausted)?;
-    if size > BRANCH_PENDING_MAX {
-        return Err(HarnessError::ResourceExhausted);
-    }
-    Ok(size)
-}
-
 fn new_run_id(scratch: &Dir) -> Result<String, HarnessError> {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -591,32 +571,27 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
     // Incrementally admitted encoded buffers cannot bypass the run-wide cap.
     let mut encoded = Vec::new();
     let mut encoded_guards = Vec::new();
-    for records in &branches {
-        // Bound encoder growth before allocation. Each JSON output is at
-        // most 8MiB per sink. The reservation lives until the encoded buffer
-        // drops, and is never manufactured at a fixed 8MiB for a tiny input.
-        let estimate = estimate_encoded_ceiling(records)?;
-        let guard = ledger
-            .reserve(Category::LiveBytes, estimate)
+    let mut pending_guards = Vec::new();
+    for (slot, records) in branches.iter().enumerate() {
+        // Exact output size and largest temporary per-record frame are
+        // computed without allocating encoded buffers.
+        let (length, max_frame) = codec::encoded_array_size(records)
+            .map_err(|_| HarnessError::ResourceExhausted)?;
+        if length > BRANCH_PENDING_MAX { return Err(HarnessError::ResourceExhausted); }
+        // Encoded output lives alongside still-retained branch records:
+        // charge both pending branch occupancy and run-wide live capacity.
+        let pending = ledger.reserve(Category::BranchBytes(slot), length)
+            .map_err(|_| HarnessError::ResourceExhausted)?;
+        let live = ledger.reserve(Category::LiveBytes,
+            length.checked_add(max_frame).ok_or(HarnessError::ResourceExhausted)?)
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let bytes = codec::encode_array(records).map_err(|_| HarnessError::ResourceExhausted)?;
-        if bytes.len() > estimate || bytes.len() > BRANCH_PENDING_MAX {
-            return Err(HarnessError::ResourceExhausted);
-        }
-        encoded_guards.push(guard);
-        // Explicitly checked per-record output before any sink file creation.
-        for item in records {
-            if codec::encode_one(&item.data)
-                .map_err(|_| HarnessError::ResourceExhausted)?
-                .len()
-                > ENCODED_RECORD_MAX
-            {
-                return Err(HarnessError::ResourceExhausted);
-            }
-        }
+        if bytes.len() != length { return Err(HarnessError::ResourceExhausted); }
+        encoded_guards.push(live);
+        pending_guards.push(pending);
         encoded.push(bytes);
     }
-    let _keep = (branch_guards, encoded_guards);
+    let _keep = (branch_guards, encoded_guards, pending_guards);
     for (slot, sink) in plan.sinks.iter().enumerate() {
         if cancelled.load(Ordering::Acquire) {
             return Err(HarnessError::UnsafePlan);

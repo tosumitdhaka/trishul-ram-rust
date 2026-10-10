@@ -1,6 +1,6 @@
 # P0-R3 — Normative attempt and execution authority protocol
 
-**Status:** Phase 0 remediation proposal. P1 has no production attempts; this specifies the P2 standalone and P4 distributed control-plane behavior that must be accepted before implementation. Standalone uses the **same semantics** via an in-process adapter; no special bypass of durable checks.
+**Status:** Phase 0 normative protocol independently approved/frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`. P1 has no production attempts; the P2 standalone and P4 distributed implementation must preserve the approved semantics. Standalone uses the **same semantics** via an in-process adapter; no special bypass of durable checks.
 
 ## 1. Identities and fence
 
@@ -91,3 +91,7 @@ Adapters return typed variants, independent of transport:
 For `OWN-10..14`, assert both ledger/journal persisted rows (including no-admission tombstone, outbox checksums and CAS revision) **and** actual absence of prohibited source/sink effects. Run the same semantic classification against in-process and remote adapters when each phase is implemented; the suite is a design acceptance specification, not executed evidence.
 
 **Gate:** P2 may ship only once the required local authority/journal subset passes real restart tests. P4 requires authenticated remote protocol, isolation, rollout, and partition proof. P1 harness is not allowed to implement a weaker version while advertising production-capable features.
+
+## Post-freeze proposed operator runbook (NOT APPROVED)
+
+See [ADR-015](proposals/adr-015-unknown-recovery-operations.md) for **proposed** revision-CAS audit/hold annotations **on existing durable UNKNOWN only**, with the protected source-generation guard and ack frontier retained after restart and even journal loss. No terminal `attempt.abandon` transition, connector duplicate-tolerance bypass, force-success or release while a prior worker/child can still write is proposed. Only the frozen authenticated completion/refusal or revocation **plus proved quiescence/fencing** permits guarded release. The table above remains binding until an independently accepted DCR explicitly supersedes a clause.

@@ -1,11 +1,11 @@
 # TRAM Rust — proposed system architecture
 
-**Status:** PROPOSED / Phase 0 / requires independent design review; not frozen.
+**Status:** Historical Phase 0 proposal text, independently approved at immutable `2cedaeac5657a8941fe9366f04029cd11b0cfd30` (Orchestrator [decision](https://github.com/tosumitdhaka/trishul-ram-rust/pull/1#issuecomment-6089485009)). The post-P1 proposals referenced below are **not frozen or approved**.
 **Reference pins for this assessment:** Python `tosumitdhaka/trishul-ram@ff380725b86c9569901ea89ad6771623847cc4e2` (documentation-only successor to released v1.8.0); Rust SNMP `tosumitdhaka/trishul-snmp-rust@bef2b7643dddd4c28326febe9e310575110b6f4b` (`trishul-snmp` 0.1.1). Revalidate live heads before subsequent gates.
 
 ## Normative phase boundary and review precedence
 
-The original P0 review returned `CHANGES_REQUIRED`. This revised package remains **PROPOSED**. Normative constraints are fully enumerated in [P1 safety](p1-safety-boundary.md), [source-unit obligations](source-unit-contract.md), [attempt authority](attempt-protocol.md), [compatibility matrix](p1-compatibility-matrix.md), [resource budgets](resource-budgets.md) and [decision register](decision-register.md). Where an earlier generic architecture sentence appears to require a worker journal for P1, **P1 is expressly non-production ephemeral-only** and cannot perform final publication/source acknowledgement. The durable-before-effect invariant becomes mandatory for P2+.
+**Historical (Phase 0 pre-freeze):** the original P0 review returned `CHANGES_REQUIRED`; the remediated design was subsequently independently approved and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`. Only the later **ADR-013..016 overlay remains PROPOSED**. Normative constraints are fully enumerated in [P1 safety](p1-safety-boundary.md), [source-unit obligations](source-unit-contract.md), [attempt authority](attempt-protocol.md), [compatibility matrix](p1-compatibility-matrix.md), [resource budgets](resource-budgets.md) and [decision register](decision-register.md). Where an earlier generic architecture sentence appears to require a worker journal for P1, **P1 is expressly non-production ephemeral-only** and cannot perform final publication/source acknowledgement. The durable-before-effect invariant becomes mandatory for P2+.
 
 ## 1. Purpose, principles, exclusions
 
@@ -134,8 +134,19 @@ Names and exact crate splits are proposed, not frozen. Avoid excessive micro-cra
 
 ## 8. Architecture review gates
 
-The blocking review (P0-R1..R6) is addressed by the [finding map](review-remediation.md); none of these edits constitute an approved freeze. D01–D12 disposition proposals are now in [decision-register.md](decision-register.md), with explicit phase boundaries and re-entry gates.
+The blocking review (P0-R1..R6) is addressed by the [finding map](review-remediation.md); those remediation edits were separately approved and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`; D01–D12 are the accepted authority in [decision-register.md](decision-register.md). Proposed D13–D16 changes have **no precedence yet**.
 
 Design approval requires review of: shared-topology invariants; execution lifecycle; ack/commit contract; journal/fencing/crash recovery; plugin capabilities; source/record/serializer compatibility; auth; bounded memory and overload behavior; native SNMP role; deployment upgrade/rollback. No crate implementation is authorized merely because this proposal was committed.
 
 Open issues and gate plan: [migration-plan.md](migration-plan.md). Detailed interfaces: [plugin-contracts.md](plugin-contracts.md), [reliability-contracts.md](reliability-contracts.md).
+
+## 9. Post-P1 amendment proposals (not part of the accepted Phase 0 freeze)
+
+The following **proposed** post-freeze amendments require independent DCR/ADR review and an explicit new Orchestrator approval before taking precedence over D01–D12 or authorizing P2 runtime work:
+
+- [ADR-013: runtime/concurrency](proposals/adr-013-p2-runtime-concurrency.md) — **unselected** Tokio-vs-bounded-thread alternatives, shared typed service contract, bounded channels/permits and cancellation/quiescence; requires the combined RUN+ISO spike. P1's single-thread/serialized test profile cannot prove P2 simultaneous sink I/O.
+- [ADR-014: standalone worker failure domain](proposals/adr-014-standalone-worker-failure-domain.md) — **unselected** in-process vs supervised local process, manager survival on native plugin fatal failure, typed local IPC and common `ExecutionService` semantics; shares the mandatory combined spike.
+- [ADR-015: UNKNOWN operations](proposals/adr-015-unknown-recovery-operations.md) — only existing `unknown` hold/audit annotations; no new terminal abandonment, no connector-only replacement, no unsafe guard release.
+- [ADR-016: data/source/backend/performance re-entry](proposals/adr-016-serialization-sources-persistence-gates.md) — explicit proposed D03/D07 P3 SNMP+JSON exception, P2 fractional JSON decision, immutable original-plan/EffectId replay and cross-revision source guard, SQLite/P4 PostgreSQL rationale and early matched-guarantee performance evidence.
+
+[Combined numeric RUN+ISO-001 spike specification](proposals/run-iso-combined-spike-contract.md) is **unexecuted and requires separate authorization**. [Review package / Orchestrator handoff](proposals/p2-readiness-handoff.md). The frozen P1 fixture, safety caps, source-unit obligation predicate, journal/CAS fencing, ambiguity semantics and D01 shared-engine invariant remain unchanged. **P1 R2 acceptance was independently recorded** in [Issue #2](https://github.com/tosumitdhaka/trishul-ram-rust/issues/2#issuecomment-6099860467); it does not approve D13–D16, P2 PRE-GATE or P2 implementation.

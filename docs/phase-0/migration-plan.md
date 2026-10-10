@@ -1,10 +1,10 @@
 # TRAM Rust — proposed migration plan and design review gate
 
-**Status:** PROPOSED, not approved or frozen. **Purpose:** reviewable scope and measurable gates, not a promise of delivery dates.
+**Status:** Historical Phase 0 plan (frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30` after independent approval). Proposed post-P1 P2-readiness changes below require **separate** design review and explicit Orchestrator acceptance; no delivery dates are promised.
 
 ## Independent review remediation in this revision
 
-The original `96e11006e4784d2e70a7b0663c598c16376b04f7` received `CHANGES_REQUIRED` (GitHub review ID `5473153676`, P0-R1 through P0-R6). These are documentation-only remediation proposals for exact-SHA re-review; no architecture approval is asserted. Binding details are linked in the [finding-to-file map](review-remediation.md).
+**Historical pre-freeze record:** the original `96e11006e4784d2e70a7b0663c598c16376b04f7` received `CHANGES_REQUIRED` (review `5473153676`, P0-R1 through P0-R6); these were subsequently remediated, independently reviewed and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`. This historical section is not a current gate denial. The **new D13–D16** overlay requires separate approval. Binding details are linked in the [finding-to-file map](review-remediation.md).
 
 ## 1. Evidence pins and source hierarchy
 
@@ -52,9 +52,25 @@ These are dependency/acceptance stages, **not** a release timeline. SNMP adapter
 - Reliability: synthetic + real broker/agent faults, worker/manager process kill, restart, overload, slow sinks, journal corruption/fill, TLS/auth and credential rejection. Runtime tests must assert effects, not solely responses.
 - Validate with real standalone and distributed deployment topology, Linux containers and Kubernetes profiles as scope matures.
 
+## 4A. Post-P1 proposed pre-P2 architecture gate (NOT YET APPROVED)
+
+This is a **proposed** supplemental gate on top of the accepted P0–P6 plan, not a retroactive P1 requirement. P1 R2 `9757aaf29665d5f774e15583e1e4f23b140b9799` **was formally accepted** by [Orchestrator PHASE_1_R2_ACCEPTED](https://github.com/tosumitdhaka/trishul-ram-rust/issues/2#issuecomment-6099860467) after independent SOURCE_REVIEW_PASS and EXECUTOR_PASS, solely for the isolated ephemeral scratch-only scope. P1 is still scratch-only, not a durable or concurrently proven production runtime. The executor's `RUST_TEST_THREADS=1` limitation is an explicitly accepted constraint, not evidence of P2 concurrency.
+
+**P2 PRE-GATE entry checks (design review before production implementation):**
+
+1. [ADR-013 runtime/concurrency](proposals/adr-013-p2-runtime-concurrency.md) + [ADR-014 isolation](proposals/adr-014-standalone-worker-failure-domain.md): independently review the **joint numeric [RUN+ISO-001 contract](proposals/run-iso-combined-spike-contract.md)**, and require a **separately Orchestrator-authorized, disposable nonproduction spike** before selecting either Tokio/std-thread runtime or in-process/supervised standalone topology. Freeze one typed ExecutionService, ledger/journal/IPC authority, 2 concurrent runs, measured I/O overlap, queue/thread/memory/FD/child limits, cancellation/crash deadlines, repeatable workload and performance nonregression.
+2. **Joint selection gate:** after reviewed RUN-01..08 / ISO-01..06 spike evidence and independent review, explicitly choose the runtime and standalone process boundary, identify superseded frozen in-process clauses *if* S is selected, preserve D01 one-engine semantics and D05 P4 remote mTLS re-entry. The design review alone does **not** authorize running the spike, P2 source code or the eventual production profile.
+3. [ADR-015 operator UNKNOWN recovery](proposals/adr-015-unknown-recovery-operations.md): only idempotent **annotations on durable UNKNOWN with guard and source-unit exclusion held**; no new terminal abandonment state, no `attempt.abandon` transition, no connector-specific duplicate-tolerant replacement without verified old-worker/child quiescence. Require restart, lost-volume and attempted override while descendant writes evidence (`UNK-01..08`).
+4. [ADR-016 data/source/replay/persistence](proposals/adr-016-serialization-sources-persistence-gates.md): propose **exact D03-SNMP-P3/D07 precedence text**: P5 generic mapping retained, `DATA-02` only **before P3 SNMP+JSON admission**, not P2/P1; P2 JSON numeric scope, original durable plan snapshot, **cross-revision source-generation exclusion**, old A-confirmed/B-unknown original EffectIds after crash/edit, P2 SQLite fault and P4 dual-backend gates.
+5. Pre-freeze acceptance package: exact source/fixture refs, independent DESIGN_REVIEW on immutable amendment candidate, proposed ADR decisions with rationale and open items, no P2 source mutation until separate Orchestrator authorization. Deferred tests must have *their own re-entry phase*; none may be silently counted as P2 passed.
+
+**P2 EXIT supplemental measurements (proposed):** first **matched-guarantee** Python-vs-Rust CPU per confirmed output, confirmed throughput, p95/p99, high-water RSS, disk/journal overhead and duplicate/unknown accounting (`PERF-01`), plus a seeded generated differential corpus for supported expressions and JSON mapping (`COMP-EXT-01`). If the Python comparator lacks equivalent durable guarantees, record **PERF-INCONCLUSIVE** and request explicit follow-up rather than comparing the P1 scratch harness to a P2 durable sink. The existing >=2x CPU throughput or >=30% peak-memory objective stays a P6 overall go/no-go criterion, **not** a promised automatic P2 PASS. P2 must report comparison and regressions, not substitute fast scratch-only P1 throughput for durable P2 output.
+
+**Future connector gates:** P3 SNMP binary JSON/Counter64/trap loss policy verified before advertisement; P4 transport+PostgreSQL CAS conformance; P5 Kafka, webhooks and other connectors advertise truthful replay/ack tiers, streaming sizes and failure semantics. Active source-unit effects keep the original immutable plan revision across replays. [Complete design review handoff](proposals/p2-readiness-handoff.md).
+
 ## 5. Deliberate decisions to review before implementation
 
-**D01–D12 now have explicit recommended ACCEPT/DEFER dispositions** with owner, binding semantics, phase applicability and mandatory re-entry gates in [decision-register.md](decision-register.md). They are proposals until independent review and project-owner Phase 0 approval. The earlier question table below remains a historical checklist and **is not** a second unresolved decision authority.
+**Historical:** D01–D12 originally had recommended ACCEPT/DEFER dispositions, but **those decisions are now independently approved and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`**. D13–D16 are separately proposed/unapproved [decision-register additions](decision-register.md). The earlier question table below remains a historical checklist and **is not** a second unresolved decision authority.
 
 | ID | Proposed default | Review question |
 |---|---|---|

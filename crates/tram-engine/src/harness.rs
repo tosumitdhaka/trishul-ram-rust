@@ -250,8 +250,12 @@ impl TestHarness {
 
 fn same_source_identity(a: &cap_std::fs::Metadata, b: &cap_std::fs::Metadata) -> bool {
     use cap_std::fs::MetadataExt;
-    a.is_file() && b.is_file() && a.dev() == b.dev() && a.ino() == b.ino()
-        && a.len() == b.len() && a.modified().ok() == b.modified().ok()
+    a.is_file()
+        && b.is_file()
+        && a.dev() == b.dev()
+        && a.ino() == b.ino()
+        && a.len() == b.len()
+        && a.modified().ok() == b.modified().ok()
 }
 /// Borrowed lexical preflight. Charge an upper bound on retained Datum/string
 /// allocations before calling the in-memory parser. A conservative refusal is
@@ -262,17 +266,27 @@ fn estimate_json_allocation_ceiling(input: &[u8]) -> Result<usize, HarnessError>
     let mut escaped = false;
     for &c in input {
         if quoted {
-            if escaped { escaped = false; }
-            else if c == b'\\' { escaped = true; }
-            else if c == b'"' { quoted = false; }
+            if escaped {
+                escaped = false;
+            } else if c == b'\\' {
+                escaped = true;
+            } else if c == b'"' {
+                quoted = false;
+            }
         } else if c == b'"' {
             quoted = true;
-            tokens = tokens.checked_add(1).ok_or(HarnessError::ResourceExhausted)?;
-        } else if matches!(c, b'{'|b'}'|b'['|b']'|b','|b':') {
-            tokens = tokens.checked_add(1).ok_or(HarnessError::ResourceExhausted)?;
+            tokens = tokens
+                .checked_add(1)
+                .ok_or(HarnessError::ResourceExhausted)?;
+        } else if matches!(c, b'{' | b'}' | b'[' | b']' | b',' | b':') {
+            tokens = tokens
+                .checked_add(1)
+                .ok_or(HarnessError::ResourceExhausted)?;
         }
     }
-    let bytes = input.len().checked_mul(2)
+    let bytes = input
+        .len()
+        .checked_mul(2)
         .and_then(|n| tokens.checked_mul(144).and_then(|t| n.checked_add(t)))
         .and_then(|n| n.checked_add(1024))
         .ok_or(HarnessError::ResourceExhausted)?;
@@ -289,36 +303,56 @@ fn estimate_datum_owned(v: &tram_model::Datum) -> Result<usize, HarnessError> {
         Datum::Bytes(x) => x.len(),
         Datum::BigInteger(x) => x.as_str().len(),
         Datum::Decimal(x) => x.as_str().len(),
-        Datum::Array(xs) => xs.iter().try_fold(0usize, |n,v|
-            estimate_datum_owned(v).ok().and_then(|v|n.checked_add(v)))
+        Datum::Array(xs) => xs
+            .iter()
+            .try_fold(0usize, |n, v| {
+                estimate_datum_owned(v).ok().and_then(|v| n.checked_add(v))
+            })
             .ok_or(HarnessError::ResourceExhausted)?,
-        Datum::Object(xs) => xs.iter().try_fold(0usize, |n,(k,v)| {
-            estimate_datum_owned(v).ok()
-                .and_then(|v|v.checked_add(k.len()+128))
-                .and_then(|v|n.checked_add(v))
-        }).ok_or(HarnessError::ResourceExhausted)?,
+        Datum::Object(xs) => xs
+            .iter()
+            .try_fold(0usize, |n, (k, v)| {
+                estimate_datum_owned(v)
+                    .ok()
+                    .and_then(|v| v.checked_add(k.len() + 128))
+                    .and_then(|v| n.checked_add(v))
+            })
+            .ok_or(HarnessError::ResourceExhausted)?,
         _ => 0,
     };
-    own.checked_add(inner).and_then(|n|n.checked_add(64))
+    own.checked_add(inner)
+        .and_then(|n| n.checked_add(64))
         .ok_or(HarnessError::ResourceExhausted)
 }
-fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize,HarnessError> {
-    record.data.iter().try_fold(512usize, |n,(k,v)| {
-        estimate_datum_owned(v).ok()
-            .and_then(|value|value.checked_add(k.len()+128))
-            .and_then(|value|n.checked_add(value))
-    }).ok_or(HarnessError::ResourceExhausted)
+fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize, HarnessError> {
+    record
+        .data
+        .iter()
+        .try_fold(512usize, |n, (k, v)| {
+            estimate_datum_owned(v)
+                .ok()
+                .and_then(|value| value.checked_add(k.len() + 128))
+                .and_then(|value| n.checked_add(value))
+        })
+        .ok_or(HarnessError::ResourceExhausted)
 }
-fn estimate_encoded_ceiling(rows: &[RecordEnvelope]) -> Result<usize,HarnessError> {
+fn estimate_encoded_ceiling(rows: &[RecordEnvelope]) -> Result<usize, HarnessError> {
     // Unicode escaping can reach six ASCII bytes per UTF-8 code point.
     // The +256 per record covers key delimiters and array metadata. The
     // hard per-branch cap is enforced *before* encoder allocation.
-    let size=rows.iter().try_fold(2usize, |n,row| {
-        estimate_envelope_owned(row).ok().and_then(|v|v.checked_mul(6))
-            .and_then(|v|v.checked_add(256))
-            .and_then(|v|n.checked_add(v))
-    }).ok_or(HarnessError::ResourceExhausted)?;
-    if size>BRANCH_PENDING_MAX {return Err(HarnessError::ResourceExhausted);}
+    let size = rows
+        .iter()
+        .try_fold(2usize, |n, row| {
+            estimate_envelope_owned(row)
+                .ok()
+                .and_then(|v| v.checked_mul(6))
+                .and_then(|v| v.checked_add(256))
+                .and_then(|v| n.checked_add(v))
+        })
+        .ok_or(HarnessError::ResourceExhausted)?;
+    if size > BRANCH_PENDING_MAX {
+        return Err(HarnessError::ResourceExhausted);
+    }
     Ok(size)
 }
 
@@ -384,22 +418,26 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         if !same_source_identity(&source, &opened) {
             return Err(HarnessError::PathEscape);
         }
-        let actual_capacity = (opened.len() as usize).checked_add(1)
+        let actual_capacity = (opened.len() as usize)
+            .checked_add(1)
             .ok_or(HarnessError::ResourceExhausted)?;
-        let _raw_charge = ledger.reserve_owned(Category::RawBytes, actual_capacity)
+        let _raw_charge = ledger
+            .reserve_owned(Category::RawBytes, actual_capacity)
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let mut bytes = Vec::with_capacity(actual_capacity);
         std::io::Read::by_ref(&mut file)
             .take((RAW_FILE_MAX + 1) as u64)
             .read_to_end(&mut bytes)
             .map_err(|_| HarnessError::Io)?;
-        if bytes.len() > RAW_FILE_MAX || !same_source_identity(
-            &opened,
-            &file.metadata().map_err(|_| HarnessError::Io)?,
-        ) || !same_source_identity(
-            &opened,
-            &input.symlink_metadata(name).map_err(|_| HarnessError::PathEscape)?,
-        ) {
+        if bytes.len() > RAW_FILE_MAX
+            || !same_source_identity(&opened, &file.metadata().map_err(|_| HarnessError::Io)?)
+            || !same_source_identity(
+                &opened,
+                &input
+                    .symlink_metadata(name)
+                    .map_err(|_| HarnessError::PathEscape)?,
+            )
+        {
             return Err(HarnessError::PathEscape);
         }
         let hash = Sha256::digest(&bytes);
@@ -407,13 +445,15 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         // The preflight walks the borrowed wire bytes. Its reservation is a
         // conservative ownership ceiling, acquired before Datum materializes.
         let budgeted_upper = estimate_json_allocation_ceiling(&bytes)?;
-        let _decoded_charge = ledger.reserve_owned(Category::DecodedBytes, budgeted_upper)
+        let _decoded_charge = ledger
+            .reserve_owned(Category::DecodedBytes, budgeted_upper)
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let rows = codec::decode(&bytes).map_err(|_| HarnessError::MalformedSource)?;
         if rows.len() > RECORDS_PER_SOURCE_MAX {
             return Err(HarnessError::ResourceExhausted);
         }
-        let _record_count = ledger.reserve(Category::Records, rows.len())
+        let _record_count = ledger
+            .reserve(Category::Records, rows.len())
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let unit_id = SourceUnitId::new(format!("{name}:{digest}"))
             .map_err(|_| HarnessError::InvalidSource)?;
@@ -455,18 +495,27 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             let mut requested = Vec::new();
             for sink in &plan.sinks {
                 let base = estimate_envelope_owned(&item)?;
-                let multiplier = sink.transforms.len().checked_add(1)
+                let multiplier = sink
+                    .transforms
+                    .len()
+                    .checked_add(1)
                     .ok_or(HarnessError::ResourceExhausted)?;
-                requested.push(base.checked_mul(multiplier)
-                    .and_then(|x| x.checked_add(1024))
-                    .ok_or(HarnessError::ResourceExhausted)?);
+                requested.push(
+                    base.checked_mul(multiplier)
+                        .and_then(|x| x.checked_add(1024))
+                        .ok_or(HarnessError::ResourceExhausted)?,
+                );
             }
-            let guards = ledger.reserve_fanout(&requested)
+            let guards = ledger
+                .reserve_fanout(&requested)
                 .map_err(|_| HarnessError::ResourceExhausted)?;
             let mut ownership_guards = Vec::new();
             for bytes in &requested {
-                ownership_guards.push(ledger.reserve(Category::LiveBytes, *bytes)
-                    .map_err(|_| HarnessError::ResourceExhausted)?);
+                ownership_guards.push(
+                    ledger
+                        .reserve(Category::LiveBytes, *bytes)
+                        .map_err(|_| HarnessError::ResourceExhausted)?,
+                );
             }
             // The branch guard set remains resident until output teardown.
             branch_guards.push((guards, ownership_guards));
@@ -499,7 +548,8 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         // most 8MiB per sink. The reservation lives until the encoded buffer
         // drops, and is never manufactured at a fixed 8MiB for a tiny input.
         let estimate = estimate_encoded_ceiling(records)?;
-        let guard = ledger.reserve(Category::LiveBytes, estimate)
+        let guard = ledger
+            .reserve(Category::LiveBytes, estimate)
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let bytes = codec::encode_array(records).map_err(|_| HarnessError::ResourceExhausted)?;
         if bytes.len() > estimate || bytes.len() > BRANCH_PENDING_MAX {
@@ -532,8 +582,11 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             .map_err(|_| HarnessError::ResourceExhausted)?;
         // Written bytes and artifact count remain cumulatively charged for
         // the entire run, including after an ambiguous/partial write.
-        scratch_guards.push(ledger.reserve_scratch(encoded[slot].len())
-            .map_err(|_| HarnessError::ResourceExhausted)?);
+        scratch_guards.push(
+            ledger
+                .reserve_scratch(encoded[slot].len())
+                .map_err(|_| HarnessError::ResourceExhausted)?,
+        );
         let slot_name = Path::new(&sink.path)
             .file_name()
             .and_then(|x| x.to_str())

@@ -15,9 +15,9 @@ use cap_std::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
-    sync::atomic::AtomicBool as RunAtomicBool,
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::atomic::AtomicBool as RunAtomicBool,
     sync::atomic::{AtomicBool, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -114,9 +114,9 @@ pub fn scratch_admission_gate_reached() -> bool {
 struct ActiveP1Run;
 impl ActiveP1Run {
     fn acquire() -> Result<Self, HarnessError> {
-        ACTIVE_P1_RUN.compare_exchange(
-            false, true, Ordering::AcqRel, Ordering::Acquire
-        ).map_err(|_| HarnessError::ResourceExhausted)?;
+        ACTIVE_P1_RUN
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| HarnessError::ResourceExhausted)?;
         Ok(Self)
     }
 }
@@ -143,15 +143,21 @@ fn open_role_dir(
             | rustix::fs::OFlags::NOFOLLOW
             | rustix::fs::OFlags::CLOEXEC,
         rustix::fs::Mode::empty(),
-    ).map_err(|_| HarnessError::PathEscape)?;
+    )
+    .map_err(|_| HarnessError::PathEscape)?;
     let opened = rustix::fs::fstat(&fd).map_err(|_| HarnessError::PathEscape)?;
     if opened.st_dev != expected.dev() || opened.st_ino != expected.ino() {
         return Err(HarnessError::PathEscape);
     }
     // The path might have changed *after* open; the handle remains pinned.
     // This second lookup is a refusal check, not a substitute for fstat.
-    let after = root.symlink_metadata(name).map_err(|_| HarnessError::PathEscape)?;
-    if after.file_type().is_symlink() || after.dev() != opened.st_dev || after.ino() != opened.st_ino {
+    let after = root
+        .symlink_metadata(name)
+        .map_err(|_| HarnessError::PathEscape)?;
+    if after.file_type().is_symlink()
+        || after.dev() != opened.st_dev
+        || after.ino() != opened.st_ino
+    {
         return Err(HarnessError::PathEscape);
     }
     Ok(Dir::from(fd))
@@ -263,8 +269,12 @@ impl TestHarness {
         let root =
             Dir::open_ambient_dir(test_root, ambient_authority()).map_err(|_| HarnessError::Io)?;
         use cap_std::fs::MetadataExt;
-        let input_preflight = root.symlink_metadata("in").map_err(|_| HarnessError::PathEscape)?;
-        let scratch_preflight = root.symlink_metadata("scratch").map_err(|_| HarnessError::PathEscape)?;
+        let input_preflight = root
+            .symlink_metadata("in")
+            .map_err(|_| HarnessError::PathEscape)?;
+        let scratch_preflight = root
+            .symlink_metadata("scratch")
+            .map_err(|_| HarnessError::PathEscape)?;
         if input_preflight.file_type().is_symlink()
             || scratch_preflight.file_type().is_symlink()
             || !input_preflight.is_dir()
@@ -289,8 +299,11 @@ impl TestHarness {
         // shared-root contenders in other processes cannot have overlapping
         // live ledgers. The kernel releases it on SIGKILL, preserving P1 crash
         // semantics and avoiding a stale pathname lock file.
-        rustix::fs::flock(&scratch, rustix::fs::FlockOperation::NonBlockingLockExclusive)
-            .map_err(|_| HarnessError::ResourceExhausted)?;
+        rustix::fs::flock(
+            &scratch,
+            rustix::fs::FlockOperation::NonBlockingLockExclusive,
+        )
+        .map_err(|_| HarnessError::ResourceExhausted)?;
         // All reservations below follow backing buffer/record lifetime.
         let ledger = BudgetLedger::new(caps);
         let mut paths = Vec::new();

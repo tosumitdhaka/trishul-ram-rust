@@ -318,6 +318,7 @@ name = "tram-engine"
 version = "0.1.0"
 dependencies = [
  "cap-std",
+ "rustix",
  "sha2",
  "tram-config",
  "tram-model",

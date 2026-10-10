@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(tree[0]["a"], Datum::Unsigned(u64::MAX));
         assert_eq!(tree[0]["b"], Datum::bigint("18446744073709551616").unwrap());
         assert_eq!(tree[0]["c"], Datum::Null);
-        assert!(tree[0].get("missing").is_none());
+        assert!(!tree[0].contains_key("missing"));
         let written = encode_one(&tree[0]).unwrap();
         assert!(std::str::from_utf8(&written)
             .unwrap()

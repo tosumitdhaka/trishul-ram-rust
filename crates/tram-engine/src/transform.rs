@@ -46,7 +46,7 @@ fn number_out(value: i128) -> Result<Datum, TransformError> {
     if let Ok(v) = u64::try_from(value) {
         return Ok(Datum::Unsigned(v));
     }
-    Ok(Datum::bigint(value.to_string()).map_err(|_| TransformError::Overflow)?)
+    Datum::bigint(value.to_string()).map_err(|_| TransformError::Overflow)
 }
 fn compare(a: &Datum, b: &Datum) -> Result<std::cmp::Ordering, TransformError> {
     match (a, b) {
@@ -247,7 +247,7 @@ mod tests {
             ),
             Ok(RecordDisposition::Retained)
         );
-        assert!(a.data.get("tag").is_none());
+        assert!(!a.data.contains_key("tag"));
         assert_eq!(b.data.get("tag"), Some(&Datum::String("secondary".into())));
         assert_eq!(original.data, a.data);
     }

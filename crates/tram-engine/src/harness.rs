@@ -25,7 +25,7 @@ use std::{
 };
 use tram_config::ValidatedPlan;
 use tram_model::{
-    BranchId, Datum, Provenance, RecordEnvelope, RecordId, RunId, SourcePosition, SourceUnitId,
+    BranchId, Provenance, RecordEnvelope, RecordId, RunId, SourcePosition, SourceUnitId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -298,7 +298,7 @@ fn execute(
             return Err(HarnessError::ResourceExhausted);
         }
         let mut bytes = Vec::with_capacity(RAW_FILE_MAX.min(opened.len() as usize + 1));
-        file.by_ref()
+        std::io::Read::by_ref(&mut file)
             .take((RAW_FILE_MAX + 1) as u64)
             .read_to_end(&mut bytes)
             .map_err(|_| HarnessError::Io)?;

@@ -68,6 +68,8 @@ pub enum InjectedFault {
     None,
     FailBeforeSink(usize),
     FailDuringSinkWrite(usize),
+    PauseBeforeSourceOpen,
+    PauseBeforeSinkOpen(usize),
     CancelAfterFirstWrite,
     /// Test-only pause after A write, allowing parent to issue SIGKILL.
     PauseAfterFirstWrite,
@@ -277,6 +279,17 @@ impl TestHarness {
     }
 }
 
+fn source_link_is_unique(source: &cap_std::fs::Metadata) -> bool {
+    use cap_std::fs::MetadataExt;
+    source.nlink() == 1
+}
+fn pause_for_adversarial_test(cancelled: &AtomicBool) -> Result<(), HarnessError> {
+    for _ in 0..25 {
+        if cancelled.load(Ordering::Acquire) { return Err(HarnessError::UnsafePlan); }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Ok(())
+}
 fn same_source_identity(a: &cap_std::fs::Metadata, b: &cap_std::fs::Metadata) -> bool {
     use cap_std::fs::MetadataExt;
     a.is_file()
@@ -437,10 +450,16 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         let _raw_buffers = ledger
             .reserve(Category::RawBuffers, 1)
             .map_err(|_| HarnessError::ResourceExhausted)?;
+        if fault == InjectedFault::PauseBeforeSourceOpen {
+            pause_for_adversarial_test(cancelled)?;
+        }
         let mut file = input.open(name).map_err(|_| HarnessError::PathEscape)?;
         let opened = file.metadata().map_err(|_| HarnessError::Io)?;
         if !opened.is_file() || opened.len() > RAW_FILE_MAX as u64 {
             return Err(HarnessError::ResourceExhausted);
+        }
+        if !source_link_is_unique(&opened) {
+            return Err(HarnessError::PathEscape);
         }
         // Reject stale or swapped source generation even when the swapped
         // target is another regular file inside the capability root.
@@ -623,6 +642,9 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         run_dir
             .create_dir(slot_name)
             .map_err(|_| HarnessError::Io)?;
+        if fault == InjectedFault::PauseBeforeSinkOpen(slot) {
+            pause_for_adversarial_test(cancelled)?;
+        }
         let slot_dir = run_dir.open_dir(slot_name).map_err(|_| HarnessError::Io)?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);

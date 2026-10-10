@@ -62,10 +62,11 @@ fn p1_real_enospc_scratch_is_unknown_and_source_immutable() {
     filler.sync_all().unwrap();
     let result = TestHarness::start(&plan, &root, &AtomicBool::new(false)).unwrap();
     assert_eq!(result.status, EphemeralStatus::Failed, "{:?}", result.error);
-    assert!(result
-        .outputs
-        .iter()
-        .any(|s| *s != BranchStatus::ScratchWritten));
+    assert_eq!(
+        result.outputs,
+        vec![BranchStatus::Unknown, BranchStatus::NotStarted],
+        "partial first sink write is uncertain; B must not have started"
+    );
     assert_eq!(result.live_after_teardown, Default::default());
     assert_eq!(fs::read(&path).unwrap(), bytes, "source content immutable");
     let after = fs::metadata(&path).unwrap();

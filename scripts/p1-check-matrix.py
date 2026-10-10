@@ -22,19 +22,26 @@ logs=Path(sys.argv[2]).read_text(encoding="utf-8")
 assert "test result: ok." in logs, "no successful Rust test-run result"
 passed=set()
 pending=None
+target=None
 for line in logs.splitlines():
-    # Rust --nocapture prints user diagnostics before its terminal standalone
-    # "ok" on a subsequent line, notably the mounted ENOSPC fault test.
-    found=re.search(r"^test (?:[\w]+::)*([\w]+) \.\.\.(.*)$",line)
+    # Cargo announces each test executable. Keep the whole Rust module path
+    # and the executable identity, never accept bare-name collisions.
+    running=re.search(r"Running .*\\(target/debug/deps/([A-Za-z_][A-Za-z_0-9]*)-[a-f0-9]+\\)",line)
+    if running:
+        target=running.group(1)
+        pending=None
+    found=re.search(r"^test ([\\w:]+) \\.\\.\\.(.*)$",line)
     if found:
-        name, suffix=found.group(1),found.group(2).strip()
+        assert target is not None, f"test name without binary identity: {line}"
+        name,suffix=found.group(1),found.group(2).strip()
+        identity=f"{target}::{name}"
         if suffix=="ok":
-            passed.add(name)
+            passed.add(identity)
             pending=None
         elif suffix.startswith("ignored") or suffix.startswith("FAILED"):
             pending=None
         else:
-            pending=name
+            pending=identity
     elif line.strip()=="ok" and pending is not None:
         passed.add(pending)
         pending=None

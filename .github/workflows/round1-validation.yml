@@ -40,6 +40,25 @@ jobs:
         run: |
           set -o pipefail
           cargo +1.88.0 test --workspace --locked 2>&1 | tee /tmp/p1-workspace-results.log
+      - name: Default parallel Cargo profile x3 (diagnostic; serial authoritative)
+        if: always()
+        shell: bash
+        run: |
+          failures=0
+          for n in 1 2 3; do
+            if env -u RUST_TEST_THREADS cargo +1.88.0 test --workspace --locked > "/tmp/p1-default-parallel-${n}.log" 2>&1; then
+              echo "P1_DEFAULT_PARALLEL_RUN_${n}=PASS"
+            else
+              echo "P1_DEFAULT_PARALLEL_RUN_${n}=FAIL"
+              tail -n 25 "/tmp/p1-default-parallel-${n}.log"
+              failures=$((failures + 1))
+            fi
+          done
+          echo "P1_DEFAULT_PARALLEL_FAILURES=${failures}"
+          echo "P1_SERIAL_PROFILE_REQUIRED=true (RUST_TEST_THREADS=1)"
+          # Only the explicit serial workspace test above is a required gate:
+          # concurrent test invocations can legitimately hit global admission.
+          # Preserve default-profile output as evidence, never claim it passed.
       - name: Focused P1 config tests
         if: always()
         run: cargo +1.88.0 test -p tram-config --locked

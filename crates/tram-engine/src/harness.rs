@@ -538,16 +538,45 @@ fn estimate_datum_owned(v: &tram_model::Datum) -> Result<usize, HarnessError> {
         .ok_or(HarnessError::ResourceExhausted)
 }
 fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize, HarnessError> {
-    record
-        .data
-        .iter()
-        .try_fold(4096usize, |n, (k, v)| {
-            estimate_datum_owned(v)
-                .ok()
-                .and_then(|value| value.checked_add(k.len() + 128))
-                .and_then(|value| n.checked_add(value))
-        })
-        .ok_or(HarnessError::ResourceExhausted)
+    // Charge the actual fixed envelope storage and owned identity strings.
+    // The 512-byte reserve covers map roots, allocator alignment and branch
+    // bookkeeping; individual BTreeMap nodes and Datum trees are charged for
+    // each field separately. Avoid a fictitious fixed 4096-byte charge per
+    // record which makes the independent branch cap unnecessarily restrictive.
+    let identities = [
+        record.provenance.run_id.as_str().len(),
+        record.provenance.source_unit_id.as_str().len(),
+        record.provenance.record_id.as_str().len(),
+        record.provenance.source_plugin.len(),
+        record.lineage.original_record.as_str().len(),
+        record
+            .lineage
+            .parent_record
+            .as_ref()
+            .map_or(0, |v| v.as_str().len()),
+        record.lineage.branch.as_ref().map_or(0, |v| v.as_str().len()),
+        record
+            .source_position
+            .as_ref()
+            .map_or(0, |v| v.opaque_cursor.capacity()),
+        record.raw_source_payload.as_ref().map_or(0, Vec::capacity),
+    ];
+    let mut total = std::mem::size_of::<RecordEnvelope>()
+        .checked_add(512)
+        .ok_or(HarnessError::ResourceExhausted)?;
+    for owned in identities {
+        total = total.checked_add(owned).ok_or(HarnessError::ResourceExhausted)?;
+    }
+    for fields in [&record.data, &record.metadata] {
+        for (key, value) in fields {
+            total = total
+                .checked_add(key.len())
+                .and_then(|n| n.checked_add(128))
+                .and_then(|n| estimate_datum_owned(value).ok().and_then(|v| n.checked_add(v)))
+                .ok_or(HarnessError::ResourceExhausted)?;
+        }
+    }
+    Ok(total)
 }
 /// Conservative pre-effect headroom for stateless transforms. Field values
 /// may deep-clone an already admitted Datum for every added field.

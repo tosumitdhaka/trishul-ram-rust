@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! In-memory-only compiled expression and stateless transform interpreter.
 //! No filesystem handles or dynamically loaded plugins are accepted.
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 use tram_config::{BinaryOp, Expression, Transform, UnaryOp};
 use tram_model::{Datum, RecordEnvelope};
 
@@ -55,65 +55,87 @@ fn compare(a: &Datum, b: &Datum) -> Result<std::cmp::Ordering, TransformError> {
         _ => Ok(numeric(a)?.cmp(&numeric(b)?)),
     }
 }
-pub fn evaluate(expr: &Expression, row: &BTreeMap<String, Datum>) -> Result<Datum, TransformError> {
+// Borrowed field and literal operands never allocate temporary Datum trees.
+// Only arithmetic/comparison results own their (bounded scalar) value.
+// AddField materializes a clone under its caller's pre-acquired growth budget.
+fn evaluate_view<'a>(
+    expr: &'a Expression,
+    row: &'a BTreeMap<String, Datum>,
+) -> Result<Cow<'a, Datum>, TransformError> {
     match expr {
-        Expression::Literal(v) => Ok(v.clone()),
+        Expression::Literal(v) => Ok(Cow::Borrowed(v)),
         Expression::Field(key) => row
             .get(key)
-            .cloned()
+            .map(Cow::Borrowed)
             .ok_or_else(|| TransformError::MissingField(key.clone())),
         Expression::Unary { op, expr } => {
-            let inner = evaluate(expr, row)?;
-            match op {
-                UnaryOp::Not => Ok(Datum::Boolean(!truthy(&inner)?)),
+            let inner = evaluate_view(expr, row)?;
+            let value = match op {
+                UnaryOp::Not => Datum::Boolean(!truthy(inner.as_ref())?),
                 UnaryOp::Negative => number_out(
-                    numeric(&inner)?
+                    numeric(inner.as_ref())?
                         .checked_neg()
                         .ok_or(TransformError::Overflow)?,
-                ),
-            }
+                )?,
+            };
+            Ok(Cow::Owned(value))
         }
         Expression::Binary { op, left, right } => {
             if *op == BinaryOp::And {
-                if !truthy(&evaluate(left, row)?)? {
-                    return Ok(Datum::Boolean(false));
+                let a = evaluate_view(left, row)?;
+                if !truthy(a.as_ref())? {
+                    return Ok(Cow::Owned(Datum::Boolean(false)));
                 }
-                return Ok(Datum::Boolean(truthy(&evaluate(right, row)?)?));
+                let b = evaluate_view(right, row)?;
+                return Ok(Cow::Owned(Datum::Boolean(truthy(b.as_ref())?)));
             }
             if *op == BinaryOp::Or {
-                if truthy(&evaluate(left, row)?)? {
-                    return Ok(Datum::Boolean(true));
+                let a = evaluate_view(left, row)?;
+                if truthy(a.as_ref())? {
+                    return Ok(Cow::Owned(Datum::Boolean(true)));
                 }
-                return Ok(Datum::Boolean(truthy(&evaluate(right, row)?)?));
+                let b = evaluate_view(right, row)?;
+                return Ok(Cow::Owned(Datum::Boolean(truthy(b.as_ref())?)));
             }
-            let a = evaluate(left, row)?;
-            let b = evaluate(right, row)?;
-            match op {
+            let a = evaluate_view(left, row)?;
+            let b = evaluate_view(right, row)?;
+            let output = match op {
                 BinaryOp::Add => number_out(
-                    numeric(&a)?
-                        .checked_add(numeric(&b)?)
+                    numeric(a.as_ref())?
+                        .checked_add(numeric(b.as_ref())?)
                         .ok_or(TransformError::Overflow)?,
-                ),
+                )?,
                 BinaryOp::Sub => number_out(
-                    numeric(&a)?
-                        .checked_sub(numeric(&b)?)
+                    numeric(a.as_ref())?
+                        .checked_sub(numeric(b.as_ref())?)
                         .ok_or(TransformError::Overflow)?,
-                ),
+                )?,
                 BinaryOp::Mul => number_out(
-                    numeric(&a)?
-                        .checked_mul(numeric(&b)?)
+                    numeric(a.as_ref())?
+                        .checked_mul(numeric(b.as_ref())?)
                         .ok_or(TransformError::Overflow)?,
-                ),
-                BinaryOp::Eq => Ok(Datum::Boolean(equality(&a, &b)?)),
-                BinaryOp::Ne => Ok(Datum::Boolean(!equality(&a, &b)?)),
-                BinaryOp::Lt => Ok(Datum::Boolean(compare(&a, &b)?.is_lt())),
-                BinaryOp::Le => Ok(Datum::Boolean(compare(&a, &b)?.is_le())),
-                BinaryOp::Gt => Ok(Datum::Boolean(compare(&a, &b)?.is_gt())),
-                BinaryOp::Ge => Ok(Datum::Boolean(compare(&a, &b)?.is_ge())),
+                )?,
+                BinaryOp::Eq => Datum::Boolean(equality(a.as_ref(), b.as_ref())?),
+                BinaryOp::Ne => Datum::Boolean(!equality(a.as_ref(), b.as_ref())?),
+                BinaryOp::Lt => Datum::Boolean(compare(a.as_ref(), b.as_ref())?.is_lt()),
+                BinaryOp::Le => Datum::Boolean(compare(a.as_ref(), b.as_ref())?.is_le()),
+                BinaryOp::Gt => Datum::Boolean(compare(a.as_ref(), b.as_ref())?.is_gt()),
+                BinaryOp::Ge => Datum::Boolean(compare(a.as_ref(), b.as_ref())?.is_ge()),
                 BinaryOp::And | BinaryOp::Or => unreachable!("short-circuited above"),
-            }
+            };
+            Ok(Cow::Owned(output))
         }
     }
+}
+fn condition_is_true(
+    expr: &Expression,
+    row: &BTreeMap<String, Datum>,
+) -> Result<bool, TransformError> {
+    let value = evaluate_view(expr, row)?;
+    truthy(value.as_ref())
+}
+pub fn evaluate(expr: &Expression, row: &BTreeMap<String, Datum>) -> Result<Datum, TransformError> {
+    Ok(evaluate_view(expr, row)?.into_owned())
 }
 fn equality(a: &Datum, b: &Datum) -> Result<bool, TransformError> {
     match (a, b) {
@@ -160,12 +182,12 @@ pub fn apply(
             Transform::AddField(expressions) => {
                 for (field, expr) in expressions {
                     // Values added earlier in the same map are visible.
-                    let value = evaluate(expr, &record.data)?;
+                    let value = evaluate_view(expr, &record.data)?.into_owned();
                     record.data.insert(field.clone(), value);
                 }
             }
             Transform::Filter(condition) => {
-                if !truthy(&evaluate(condition, &record.data)?)? {
+                if !condition_is_true(condition, &record.data)? {
                     return Ok(RecordDisposition::FilteredGlobal);
                 }
             }
@@ -184,7 +206,7 @@ pub fn branch_condition(
     slot: usize,
 ) -> Result<RecordDisposition, TransformError> {
     if let Some(expr) = condition {
-        if !truthy(&evaluate(expr, &record.data)?)? {
+        if !condition_is_true(expr, &record.data)? {
             return Ok(RecordDisposition::FilteredForSink { slot });
         }
     }
@@ -218,6 +240,26 @@ mod tests {
             left: Box::new(a),
             right: Box::new(b),
         }
+    }
+    #[test]
+    fn r2_m5_large_field_comparison_and_short_circuit_borrow_owned_values() {
+        let large = "q".repeat(3 * 1024 * 1024);
+        let row = BTreeMap::from([("payload".into(), Datum::String(large.clone()))]);
+        let field = Expression::Field("payload".into());
+        let literal = Expression::Literal(Datum::String(large));
+        assert!(matches!(evaluate_view(&field, &row).unwrap(), Cow::Borrowed(_)));
+        assert!(matches!(evaluate_view(&literal, &row).unwrap(), Cow::Borrowed(_)));
+        let equals = binary(BinaryOp::Eq, field.clone(), literal);
+        assert_eq!(evaluate_view(&equals, &row).unwrap().as_ref(), &Datum::Boolean(true));
+        let false_and_missing = binary(
+            BinaryOp::And,
+            Expression::Literal(Datum::Boolean(false)),
+            Expression::Field("missing".into()),
+        );
+        assert_eq!(
+            evaluate_view(&false_and_missing, &row).unwrap().as_ref(),
+            &Datum::Boolean(false)
+        );
     }
     #[test]
     fn comp_07_11_four_transforms_and_independent_fanout() {

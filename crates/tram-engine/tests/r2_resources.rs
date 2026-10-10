@@ -1046,3 +1046,120 @@ fn r2_m2_child_swap_fifo_before_source_open() {
     assert_eq!(fs::read(&source).unwrap(), INPUT);
     assert_eq!(fs::read_dir(root.join("scratch")).unwrap().count(), 1);
 }
+
+fn r2_m3_compiled_minimal_plan(root: &Path, count: usize) -> tram_config::ValidatedPlan {
+    assert!((1..=2).contains(&count));
+    let a = YAML.find("\n  transforms:\n").unwrap();
+    let b = a + 1 + YAML[a + 1..].find("\n  serializer_out:\n").unwrap();
+    let mut yaml = format!("{}{}", &YAML[..a], &YAML[b..]);
+    if count == 1 {
+        let start = yaml
+            .find("    - type: local\n      path: ${TRAM_P1_SCRATCH_B}")
+            .unwrap();
+        let end = yaml.find("  thread_workers: 1").unwrap();
+        yaml.replace_range(start..end, "");
+    }
+    let vars = BTreeMap::from([
+        ("TRAM_P1_INPUT_DIR".into(), root.join("in").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_A".into(), root.join("scratch/a").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_B".into(), root.join("scratch/b").to_string_lossy().into_owned()),
+    ]);
+    let plan = compile_p1_builtin(&yaml, &vars).unwrap();
+    assert!(plan.is_compiler_minted());
+    assert_eq!(plan.sinks.len(), count);
+    plan
+}
+
+#[test]
+fn r2_m3_4096_filtered_rows_obey_source_not_branch_ceiling() {
+    let root = Root::new();
+    let source = format!(
+        "[{}]",
+        std::iter::repeat_n(r#"{"old_id":"A","metric":1}"#, 4096)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    root.add("input.json", source.as_bytes());
+    let result = TestHarness::start(&root.plan(), &root.path, &AtomicBool::new(false)).unwrap();
+    assert_eq!(result.status, EphemeralStatus::Completed, "{:?}", result.error);
+    assert_eq!(result.source_units[0].record_count, 4096);
+    assert_eq!(result.source_units[0].filtered_global, 4096);
+    assert_eq!(result.peaks.records, 4096);
+    assert_eq!(result.live_after_teardown, Default::default());
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), source.as_bytes());
+    println!("R2_M3_FILTERED_4096_PEAKS={:?}", result.peaks);
+}
+
+#[test]
+fn r2_m3_4096_retained_one_and_two_sinks_respect_independent_caps() {
+    use tram_engine::budget::{BRANCH_PENDING_MAX, LIVE_TOTAL_MAX};
+    for sink_count in 1..=2 {
+        let root = Root::new();
+        let source = format!(
+            "[{}]",
+            std::iter::repeat_n(r#"{"a":1}"#, 4096)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        root.add("input.json", source.as_bytes());
+        let plan = r2_m3_compiled_minimal_plan(&root.path, sink_count);
+        let result = TestHarness::start(&plan, &root.path, &AtomicBool::new(false)).unwrap();
+        assert_eq!(result.source_units[0].record_count, 4096);
+        assert_eq!(result.peaks.records, 4096);
+        assert!(result.peaks.live_bytes <= LIVE_TOTAL_MAX);
+        assert!(result.peaks.branch_bytes.iter().all(|x| *x <= BRANCH_PENDING_MAX));
+        assert_eq!(result.live_after_teardown, Default::default());
+        match result.status {
+            EphemeralStatus::Completed => {
+                assert_eq!(result.scratch_paths.len(), sink_count);
+                for output in &result.scratch_paths {
+                    assert_eq!(codec::decode(&fs::read(output).unwrap()).unwrap().len(), 4096);
+                }
+            }
+            EphemeralStatus::Failed => {
+                assert_eq!(result.error.as_deref(), Some("ResourceExhausted"));
+                assert!(result.scratch_paths.is_empty());
+            }
+            value => panic!("unexpected retained-record outcome: {value:?}"),
+        }
+        assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), source.as_bytes());
+        println!("R2_M3_RETAINED_SINKS_{sink_count}={:?} PEAKS={:?}", result.status, result.peaks);
+    }
+}
+
+#[test]
+fn r2_m5_large_field_predicates_are_borrowed_under_live_cap() {
+    use tram_engine::budget::LIVE_TOTAL_MAX;
+    let root = Root::new();
+    let payload = "a".repeat(600 * 1024);
+    let source = format!(
+        "[{}]",
+        (0..5)
+            .map(|_| format!(r#"{{"old_id":"A","metric":12,"payload":"{payload}"}}"#))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    root.add("input.json", source.as_bytes());
+    let yaml = YAML
+        .replace("condition: \"metric >= 10\"", "condition: \"payload == payload\"")
+        .replace(
+            "filename_template: \"output-a.json\"",
+            "filename_template: \"output-a.json\"\n      condition: \"payload == payload\"",
+        );
+    let vars = BTreeMap::from([
+        ("TRAM_P1_INPUT_DIR".into(), root.path.join("in").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_A".into(), root.path.join("scratch/a").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_B".into(), root.path.join("scratch/b").to_string_lossy().into_owned()),
+    ]);
+    let plan = compile_p1_builtin(&yaml, &vars).unwrap();
+    let before = rss_kib();
+    let result = TestHarness::start(&plan, &root.path, &AtomicBool::new(false)).unwrap();
+    let after = rss_kib();
+    assert_eq!(result.status, EphemeralStatus::Completed, "{:?}", result.error);
+    assert!(result.peaks.live_bytes <= LIVE_TOTAL_MAX);
+    assert_eq!(result.peaks.records, 5);
+    assert_eq!(result.live_after_teardown, Default::default());
+    assert_eq!(result.scratch_paths.len(), 2);
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), source.as_bytes());
+    println!("R2_M5_PREDICATE_LEDGER_PEAKS={:?} RSS_KIB_BEFORE={before:?} AFTER={after:?}", result.peaks);
+}

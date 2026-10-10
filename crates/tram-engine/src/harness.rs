@@ -837,9 +837,11 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             for sink in &plan.sinks {
                 let base = estimate_envelope_owned(&item)?;
                 let headroom = transform_growth_upper(&item, &sink.transforms)?;
+                // Owned envelope, backing Datum and identity bytes are
+                // already charged; 256 further bytes cover fork/map slack.
                 requested.push(
                     base.checked_add(headroom)
-                        .and_then(|n| n.checked_add(1024))
+                        .and_then(|n| n.checked_add(256))
                         .ok_or(HarnessError::ResourceExhausted)?,
                 );
             }

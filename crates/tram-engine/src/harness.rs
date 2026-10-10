@@ -23,7 +23,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tram_config::ValidatedPlan;
+use tram_config::{Expression, Transform, ValidatedPlan};
 use tram_model::{
     BranchId, Provenance, RecordEnvelope, RecordId, RunId, SourcePosition, SourceUnitId,
 };
@@ -372,13 +372,49 @@ fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize, HarnessErro
     record
         .data
         .iter()
-        .try_fold(512usize, |n, (k, v)| {
+        .try_fold(4096usize, |n, (k, v)| {
             estimate_datum_owned(v)
                 .ok()
                 .and_then(|value| value.checked_add(k.len() + 128))
                 .and_then(|value| n.checked_add(value))
         })
         .ok_or(HarnessError::ResourceExhausted)
+}
+/// Conservative pre-effect headroom for stateless transforms. Field values
+/// may deep-clone an already admitted Datum for every added field.
+fn transform_growth_upper(record:&RecordEnvelope, steps:&[Transform])->Result<usize,HarnessError>{
+    let largest=record.data.values().try_fold(0usize,|max,v|
+        estimate_datum_owned(v).ok().map(|n|max.max(n)))
+        .ok_or(HarnessError::ResourceExhausted)?;
+    let mut cost=0usize;
+    for step in steps{
+        match step{
+            Transform::AddField(fields)=>{
+                for (key,expr) in fields{
+                    let max_value=largest.max(largest_literal_owned(expr)?).max(256);
+                    let bytes=max_value.checked_add(key.len()).and_then(|n|n.checked_add(192))
+                        .ok_or(HarnessError::ResourceExhausted)?;
+                    cost=cost.checked_add(bytes).ok_or(HarnessError::ResourceExhausted)?;
+                }
+            },
+            Transform::Rename(pairs)=>{
+                for (_from,to) in pairs{
+                    cost=cost.checked_add(to.len()).and_then(|n|n.checked_add(192))
+                        .ok_or(HarnessError::ResourceExhausted)?;
+                }
+            },
+            Transform::Filter(_) | Transform::Drop(_)=>{},
+        }
+    }
+    Ok(cost)
+}
+fn largest_literal_owned(expr:&Expression)->Result<usize,HarnessError>{
+    match expr{
+        Expression::Literal(v)=>estimate_datum_owned(v),
+        Expression::Field(_)=>Ok(0),
+        Expression::Unary{expr,..}=>largest_literal_owned(expr),
+        Expression::Binary{left,right,..}=>Ok(largest_literal_owned(left)?.max(largest_literal_owned(right)?)),
+    }
 }
 fn new_run_id(scratch: &Dir) -> Result<String, HarnessError> {
     let nanos = SystemTime::now()
@@ -513,6 +549,9 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
                 ordinal: Some(ordinal as u64),
             });
             item.data = data;
+            let transform_headroom=transform_growth_upper(&item,&plan.transforms)?;
+            let _transform_guard=ledger.reserve_owned(Category::DecodedBytes,transform_headroom)
+                .map_err(|_|HarnessError::ResourceExhausted)?;
             let disposition = transform::apply(&mut item, &plan.transforms)
                 .map_err(|_| HarnessError::MalformedSource)?;
             if disposition == RecordDisposition::FilteredGlobal {
@@ -524,17 +563,11 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             // Transform copies are covered by an explicit conservative bound.
             let mut requested = Vec::new();
             for sink in &plan.sinks {
-                let base = estimate_envelope_owned(&item)?;
-                let multiplier = sink
-                    .transforms
-                    .len()
-                    .checked_add(1)
-                    .ok_or(HarnessError::ResourceExhausted)?;
-                requested.push(
-                    base.checked_mul(multiplier)
-                        .and_then(|x| x.checked_add(1024))
-                        .ok_or(HarnessError::ResourceExhausted)?,
-                );
+                let base=estimate_envelope_owned(&item)?;
+                let headroom=transform_growth_upper(&item,&sink.transforms)?;
+                requested.push(base.checked_add(headroom)
+                    .and_then(|n|n.checked_add(1024))
+                    .ok_or(HarnessError::ResourceExhausted)?);
             }
             let guards = ledger
                 .reserve_fanout(&requested)

@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Additional bounded P1 resource, pre-effect and real-fault regressions.
+//! Disposable fixture roots only; never operate on production paths.
+#![cfg(target_os = "linux")]
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::{atomic::{AtomicBool, Ordering}, Arc},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tram_config::{compile_p1_builtin, ConfigError};
+use tram_engine::{
+    budget::{BudgetLedger, BudgetCaps, Category, BudgetError, DECODED_SOURCE_MAX, RAW_FILE_MAX},
+    codec::{self, JsonError},
+    harness::{EphemeralStatus, HarnessError, InjectedFault, TestHarness, BranchStatus},
+};
+use tram_model::Datum;
+const YAML: &str = include_str!("../../../docs/phase-0/fixtures/p1/pipeline.yaml");
+const INPUT: &[u8] = include_bytes!("../../../docs/phase-0/fixtures/p1/input.json");
+struct Root { path: PathBuf }
+impl Root {
+    fn new() -> Self {
+        let n=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let path=std::env::temp_dir().join(format!("tram-p1-bounds-{}-{n}",std::process::id()));
+        fs::create_dir(&path).unwrap();
+        fs::create_dir(path.join("in")).unwrap();
+        fs::create_dir(path.join("scratch")).unwrap();
+        Self{path}
+    }
+    fn add(&self,name:&str,bytes:&[u8]){fs::write(self.path.join("in").join(name),bytes).unwrap();}
+    fn plan(&self)->tram_config::ValidatedPlan {plan(&self.path)}
+}
+impl Drop for Root {fn drop(&mut self){let _=fs::remove_dir_all(&self.path);}}
+fn plan(root:&Path)->tram_config::ValidatedPlan {
+    let vars=BTreeMap::from([
+        ("TRAM_P1_INPUT_DIR".into(),root.join("in").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_A".into(),root.join("scratch/a").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_B".into(),root.join("scratch/b").to_string_lossy().into_owned()),
+    ]);
+    compile_p1_builtin(YAML,&vars).unwrap()
+}
+fn scratch_runs(root:&Root)->usize {fs::read_dir(root.path.join("scratch")).unwrap().count()}
+fn rss_kib()->Option<u64>{
+    let status=fs::read_to_string("/proc/self/status").ok()?;
+    status.lines().find(|line|line.starts_with("VmRSS:"))?
+        .split_whitespace().nth(1)?.parse().ok()
+}
+#[test]
+fn res_02_json_depth_and_token_count_fail_closed(){
+    let deep=format!("{{\"a\":{}}}", "[".repeat(33)+"0"+&"]".repeat(33));
+    assert_eq!(codec::decode(deep.as_bytes()),Err(JsonError::ResourceExhausted));
+    let many=format!("{{\"a\":[{}]}}",std::iter::repeat_n("0",100_001).collect::<Vec<_>>().join(","));
+    assert!(many.len()<RAW_FILE_MAX);
+    assert_eq!(codec::decode(many.as_bytes()),Err(JsonError::ResourceExhausted));
+}
+#[test]
+fn res_03_4097_decoded_records_and_decoded_allocation_cap(){
+    let rows=format!("[{}]",std::iter::repeat_n("{}",4097).collect::<Vec<_>>().join(","));
+    assert_eq!(codec::decode(rows.as_bytes()),Err(JsonError::ResourceExhausted));
+    let ledger=BudgetLedger::p1();
+    assert!(matches!(
+        ledger.reserve(Category::DecodedBytes,DECODED_SOURCE_MAX+1),
+        Err(BudgetError::ResourceExhausted)
+    ));
+    assert_eq!(ledger.current().decoded_bytes,0);
+}
+#[test]
+fn res_07_101_source_artifact_candidates_rejected_pre_scratch(){
+    let root=Root::new();
+    for n in 0..101 {root.add(&format!("item-{n:03}.json"),b"[]");}
+    let error=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap_err();
+    assert_eq!(error,HarnessError::ResourceExhausted);
+    assert_eq!(scratch_runs(&root),0);
+    assert_eq!(fs::read(root.path.join("in/item-000.json")).unwrap(),b"[]");
+}
+#[test]
+fn p1_admit_01_config_finalization_negative_all_pre_effect(){
+    let root=Root::new();
+    root.add("input.json",INPUT);
+    let vars=BTreeMap::from([
+        ("TRAM_P1_INPUT_DIR".into(),root.path.join("in").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_A".into(),root.path.join("scratch/a").to_string_lossy().into_owned()),
+        ("TRAM_P1_SCRATCH_B".into(),root.path.join("scratch/b").to_string_lossy().into_owned()),
+    ]);
+    for field in [
+        "skip_processed: true","skip_processed: false",
+        "delete_after_read: true","delete_after_read: false",
+        "unsupported_probe: false","move_after_read: null",
+    ] {
+        let modified=YAML.replacen("  source:\n",&format!("  source:\n    {field}\n"),1);
+        assert!(matches!(
+            compile_p1_builtin(&modified,&vars),
+            Err(ConfigError::UnsupportedOption(_))
+        ),"{field}");
+        assert_eq!(scratch_runs(&root),0);
+    }
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(),INPUT);
+}
+#[test]
+fn p1_admit_01_scratch_parent_symlink_is_rejected_without_outside_effects(){
+    use std::os::unix::fs::symlink;
+    let root=Root::new();
+    root.add("input.json",INPUT);
+    let outsider=Root::new();
+    fs::remove_dir(root.path.join("scratch")).unwrap();
+    symlink(outsider.path.join("scratch"),root.path.join("scratch")).unwrap();
+    let fail=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap_err();
+    assert_eq!(fail,HarnessError::PathEscape);
+    assert_eq!(scratch_runs(&outsider),0);
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(),INPUT);
+}
+#[test]
+fn comp_02_multiple_sources_are_sorted_and_one_file_is_one_unit(){
+    let root=Root::new();
+    root.add("b.json",br#"[{"old_id":"B","metric":12}]"#);
+    root.add("a.json",br#"[{"old_id":"A","metric":12}]"#);
+    let out=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap();
+    assert_eq!(out.status,EphemeralStatus::Completed,"{:?}",out.error);
+    assert_eq!(out.source_units.len(),2);
+    assert_eq!(out.source_units[0].relative_name,"a.json");
+    assert_eq!(out.source_units[1].relative_name,"b.json");
+    let records=codec::decode(&fs::read(&out.scratch_paths[0]).unwrap()).unwrap();
+    assert_eq!(records.len(),2);
+    assert_eq!(records[0]["cell_id"],Datum::String("A".into()));
+    assert_eq!(records[1]["cell_id"],Datum::String("B".into()));
+}
+#[test]
+fn res_05_blocked_sink_can_be_cancelled_without_source_mutation(){
+    let root=Root::new();
+    root.add("input.json",INPUT);
+    let source=root.path.join("in/input.json");
+    let bytes=fs::read(&source).unwrap();
+    let mtime=fs::metadata(&source).unwrap().modified().unwrap();
+    let flag=Arc::new(AtomicBool::new(false));
+    let flag_child=Arc::clone(&flag);
+    let plan=root.plan();
+    let path=root.path.clone();
+    let thread=std::thread::spawn(move||{
+        TestHarness::start_with_fault(&plan,&path,&flag_child,InjectedFault::PauseAfterFirstWrite)
+    });
+    let deadline=Instant::now()+Duration::from_secs(8);
+    let mut observed=false;
+    while Instant::now()<deadline {
+        if let Ok(entries)=fs::read_dir(root.path.join("scratch")) {
+            for entry in entries.flatten() {
+                if entry.path().join("a/output-a.json").exists(){observed=true;break;}
+            }
+        }
+        if observed {break;}
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    assert!(observed,"blocked fault did not produce first scratch artifact");
+    flag.store(true,Ordering::Release);
+    let out=thread.join().expect("bounded cancel").unwrap();
+    assert_eq!(out.status,EphemeralStatus::Cancelled);
+    assert_eq!(out.outputs,vec![BranchStatus::ScratchWritten,BranchStatus::NotStarted]);
+    assert_eq!(fs::read(&source).unwrap(),bytes);
+    assert_eq!(fs::metadata(&source).unwrap().modified().unwrap(),mtime);
+}
+#[test]
+fn res_06_branch_clone_stress_and_rss_observations(){
+    let root=Root::new();
+    let payload="x".repeat(128*1024);
+    let source=format!(r#"[{{"old_id":"A","metric":12,"payload":"{payload}"}}]"#);
+    root.add("input.json",source.as_bytes());
+    let rss_before=rss_kib();
+    let out=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap();
+    let rss_after=rss_kib();
+    assert_eq!(out.status,EphemeralStatus::Completed,"{:?}",out.error);
+    let a=codec::decode(&fs::read(&out.scratch_paths[0]).unwrap()).unwrap();
+    let b=codec::decode(&fs::read(&out.scratch_paths[1]).unwrap()).unwrap();
+    assert_eq!(a.len(),1);assert_eq!(b.len(),1);
+    assert!(a[0].get("tag").is_none());
+    assert_eq!(b[0]["tag"],Datum::String("secondary".into()));
+    assert_eq!(a[0]["payload"],Datum::String(payload));
+    assert_eq!(out.peaks.raw_buffers,1);
+    assert_eq!(out.peaks.sink_io,1);
+    assert!(out.peaks.branch_bytes.iter().all(|x|*x<=8*1024*1024));
+    println!("P1_RES06_RSS_KIB_BEFORE={rss_before:?}");
+    println!("P1_RES06_RSS_KIB_AFTER={rss_after:?}");
+    println!("P1_RES06_LEDGER_PEAKS={:?}",out.peaks);
+}
+#[test]
+fn res_07_scratch_artifact_and_cumulative_accounting_refuse_over_budget(){
+    let ledger=BudgetLedger::new(BudgetCaps {
+        scratch_artifacts:2,scratch_bytes:12,..BudgetCaps::default()
+    });
+    let first=ledger.reserve(Category::ScratchArtifacts,2).unwrap();
+    assert!(matches!(ledger.reserve(Category::ScratchArtifacts,1),Err(BudgetError::ResourceExhausted)));
+    let bytes=ledger.reserve(Category::ScratchBytes,12).unwrap();
+    assert!(matches!(ledger.reserve(Category::ScratchBytes,1),Err(BudgetError::ResourceExhausted)));
+    assert_eq!(ledger.current().scratch_artifacts,2);
+    drop((first,bytes));
+    assert_eq!(ledger.current().scratch_artifacts,0);
+    assert_eq!(ledger.current().scratch_bytes,0);
+}

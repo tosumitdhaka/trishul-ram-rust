@@ -41,3 +41,30 @@ jobs:
       - name: Focused P1 engine pure and sandbox integration
         if: always()
         run: cargo +1.88.0 test -p tram-engine --locked
+  python-oracle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout frozen Rust fixtures
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout pinned public Python reference
+        uses: actions/checkout@v4
+        with:
+          repository: tosumitdhaka/trishul-ram
+          ref: ff380725b86c9569901ea89ad6771623847cc4e2
+          path: python-reference
+          persist-credentials: false
+      - name: Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install isolated reference dependencies
+        run: |
+          python -m venv /tmp/tram-python-oracle-venv
+          /tmp/tram-python-oracle-venv/bin/python -m pip install --disable-pip-version-check -e ./python-reference
+      - name: Pinned isolated Python golden execution
+        run: |
+          /tmp/tram-python-oracle-venv/bin/python -m pip freeze
+          /tmp/tram-python-oracle-venv/bin/python scripts/p1-python-oracle.py

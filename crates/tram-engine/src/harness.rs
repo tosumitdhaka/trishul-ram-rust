@@ -507,9 +507,10 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             .take(actual_capacity as u64)
             .read_to_end(&mut bytes)
             .map_err(|_| HarnessError::Io)?;
-        let mut overrun = [0u8;1];
+        let mut overrun = [0u8; 1];
         let grew = file.read(&mut overrun).map_err(|_| HarnessError::Io)? != 0;
-        if grew || bytes.len() != actual_capacity
+        if grew
+            || bytes.len() != actual_capacity
             || !same_source_identity(&opened, &file.metadata().map_err(|_| HarnessError::Io)?)
             || !same_source_identity(
                 &opened,

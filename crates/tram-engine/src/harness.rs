@@ -493,18 +493,24 @@ fn largest_literal_owned(expr: &Expression) -> Result<usize, HarnessError> {
 /// for at most a small bounded deadline; cancellation is polled while waiting.
 /// This is not a durable or async sink retry and never spawns new tasks.
 fn reserve_fanout_cancellable(
-    ledger:&BudgetLedger, bytes:&[usize],cancelled:&AtomicBool
-)->Result<Vec<crate::budget::Reservation>,HarnessError>{
-    let deadline=std::time::Instant::now()+std::time::Duration::from_millis(100);
-    loop{
-        if cancelled.load(Ordering::Acquire){return Err(HarnessError::UnsafePlan);}
-        match ledger.reserve_fanout(bytes){
-            Ok(guards)=>return Ok(guards),
-            Err(crate::budget::BudgetError::ResourceExhausted) =>{
-                if std::time::Instant::now()>=deadline{return Err(HarnessError::ResourceExhausted);}
+    ledger: &BudgetLedger,
+    bytes: &[usize],
+    cancelled: &AtomicBool,
+) -> Result<Vec<crate::budget::Reservation>, HarnessError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+    loop {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(HarnessError::UnsafePlan);
+        }
+        match ledger.reserve_fanout(bytes) {
+            Ok(guards) => return Ok(guards),
+            Err(crate::budget::BudgetError::ResourceExhausted) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(HarnessError::ResourceExhausted);
+                }
                 std::thread::sleep(std::time::Duration::from_millis(5));
-            },
-            Err(_)=>return Err(HarnessError::ResourceExhausted),
+            }
+            Err(_) => return Err(HarnessError::ResourceExhausted),
         }
     }
 }
@@ -673,7 +679,7 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
                         .ok_or(HarnessError::ResourceExhausted)?,
                 );
             }
-            let guards = reserve_fanout_cancellable(ledger,&requested,cancelled)?;
+            let guards = reserve_fanout_cancellable(ledger, &requested, cancelled)?;
             let mut ownership_guards = Vec::new();
             for bytes in &requested {
                 ownership_guards.push(
@@ -816,31 +822,32 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
     Ok(())
 }
 
-
 #[cfg(test)]
 mod bounded_backpressure_tests {
     use super::*;
     use crate::budget::{BudgetCaps, Totals};
     #[test]
     fn r2_g1_full_branch_stops_admission_before_fanout_and_cancel_unblocks() {
-        let ledger=BudgetLedger::new(BudgetCaps {
-            branch_bytes:0,total_pending:0,..BudgetCaps::default()
+        let ledger = BudgetLedger::new(BudgetCaps {
+            branch_bytes: 0,
+            total_pending: 0,
+            ..BudgetCaps::default()
         });
-        let cancel=AtomicBool::new(false);
-        let started=std::time::Instant::now();
+        let cancel = AtomicBool::new(false);
+        let started = std::time::Instant::now();
         assert!(matches!(
-            reserve_fanout_cancellable(&ledger,&[1,1],&cancel),
+            reserve_fanout_cancellable(&ledger, &[1, 1], &cancel),
             Err(HarnessError::ResourceExhausted)
         ));
-        assert!(started.elapsed()>=std::time::Duration::from_millis(100));
-        assert_eq!(ledger.current(),Totals::default());
-        cancel.store(true,Ordering::Release);
-        let cancelled=std::time::Instant::now();
+        assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+        assert_eq!(ledger.current(), Totals::default());
+        cancel.store(true, Ordering::Release);
+        let cancelled = std::time::Instant::now();
         assert!(matches!(
-            reserve_fanout_cancellable(&ledger,&[1,1],&cancel),
+            reserve_fanout_cancellable(&ledger, &[1, 1], &cancel),
             Err(HarnessError::UnsafePlan)
         ));
-        assert!(cancelled.elapsed()<std::time::Duration::from_secs(1));
-        assert_eq!(ledger.current(),Totals::default());
+        assert!(cancelled.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(ledger.current(), Totals::default());
     }
 }

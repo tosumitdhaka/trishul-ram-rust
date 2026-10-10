@@ -108,16 +108,23 @@ impl TestHarness {
         cancelled: &AtomicBool,
         fault: InjectedFault,
     ) -> Result<RunOutcome, HarnessError> {
-        Self::start_with_caps_and_fault(plan, test_root, cancelled,
-            crate::budget::BudgetCaps::default(), fault)
+        Self::start_with_caps_and_fault(
+            plan,
+            test_root,
+            cancelled,
+            crate::budget::BudgetCaps::default(),
+            fault,
+        )
     }
     /// Lower-only, isolated deterministic limits for resource-pressure tests.
     /// Never raises frozen P1 caps.
     pub fn start_with_caps(
-        plan: &ValidatedPlan, test_root: &Path, cancelled: &AtomicBool,
+        plan: &ValidatedPlan,
+        test_root: &Path,
+        cancelled: &AtomicBool,
         caps: crate::budget::BudgetCaps,
     ) -> Result<RunOutcome, HarnessError> {
-        Self::start_with_caps_and_fault(plan,test_root,cancelled,caps,InjectedFault::None)
+        Self::start_with_caps_and_fault(plan, test_root, cancelled, caps, InjectedFault::None)
     }
     pub fn start_with_caps_and_fault(
         plan: &ValidatedPlan,

@@ -289,61 +289,150 @@ fn res_07_scratch_artifact_and_cumulative_accounting_refuse_over_budget() {
     assert_eq!(ledger.current().scratch_bytes, 0);
 }
 
-
 #[test]
 fn r2_g1_runtime_actual_records_and_zero_leaked_reservations() {
-    let t=Root::new();t.add("input.json",INPUT);
-    let result=TestHarness::start(&t.plan(),&t.path,&AtomicBool::new(false)).unwrap();
-    assert_eq!(result.status,EphemeralStatus::Completed,"{:?}",result.error);
-    assert_eq!(result.source_units[0].record_count,2);
-    assert!(result.peaks.records>0,"actual decoded record count must be nonzero");
-    assert!(result.peaks.raw_bytes < RAW_FILE_MAX,
-        "raw charge must use actual frame bytes not a fixed 4MiB");
-    assert!(result.peaks.decoded_bytes < DECODED_SOURCE_MAX,
-        "decoder preflight must use frame-proportional ownership");
-    assert!(result.peaks.live_bytes>0);
-    assert!(result.peaks.branch_bytes.iter().all(|x|*x>0&&*x<8*1024*1024));
-    assert_eq!(result.peaks.scratch_artifacts,2);
-    assert_eq!(result.live_after_teardown,Default::default(),
-        "all move-only guards released on terminal outcome");
-    println!("R2_G1_ACTUAL_PEAKS={:?}",result.peaks);
+    let t = Root::new();
+    t.add("input.json", INPUT);
+    let result = TestHarness::start(&t.plan(), &t.path, &AtomicBool::new(false)).unwrap();
+    assert_eq!(
+        result.status,
+        EphemeralStatus::Completed,
+        "{:?}",
+        result.error
+    );
+    assert_eq!(result.source_units[0].record_count, 2);
+    assert!(
+        result.peaks.records > 0,
+        "actual decoded record count must be nonzero"
+    );
+    assert!(
+        result.peaks.raw_bytes < RAW_FILE_MAX,
+        "raw charge must use actual frame bytes not a fixed 4MiB"
+    );
+    assert!(
+        result.peaks.decoded_bytes < DECODED_SOURCE_MAX,
+        "decoder preflight must use frame-proportional ownership"
+    );
+    assert!(result.peaks.live_bytes > 0);
+    assert!(result
+        .peaks
+        .branch_bytes
+        .iter()
+        .all(|x| *x > 0 && *x < 8 * 1024 * 1024));
+    assert_eq!(result.peaks.scratch_artifacts, 2);
+    assert_eq!(
+        result.live_after_teardown,
+        Default::default(),
+        "all move-only guards released on terminal outcome"
+    );
+    println!("R2_G1_ACTUAL_PEAKS={:?}", result.peaks);
 }
 #[test]
 fn r2_g1_injected_lower_caps_fail_closed_without_unbounded_output() {
-    let t=Root::new();t.add("input.json",INPUT);
-    let before=fs::read(t.path.join("in/input.json")).unwrap();
-    let modified=fs::metadata(t.path.join("in/input.json")).unwrap().modified().unwrap();
-    let categories=[
-        ("raw",BudgetCaps{raw_bytes:1,..BudgetCaps::default()}),
-        ("decoded",BudgetCaps{decoded_bytes:1,..BudgetCaps::default()}),
-        ("records",BudgetCaps{records:1,..BudgetCaps::default()}),
-        ("live",BudgetCaps{live_bytes:1,..BudgetCaps::default()}),
-        ("branch",BudgetCaps{branch_bytes:1,..BudgetCaps::default()}),
-        ("scratch_bytes",BudgetCaps{scratch_bytes:1,..BudgetCaps::default()}),
-        ("scratch_artifacts",BudgetCaps{scratch_artifacts:1,..BudgetCaps::default()}),
+    let t = Root::new();
+    t.add("input.json", INPUT);
+    let before = fs::read(t.path.join("in/input.json")).unwrap();
+    let modified = fs::metadata(t.path.join("in/input.json"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let categories = [
+        (
+            "raw",
+            BudgetCaps {
+                raw_bytes: 1,
+                ..BudgetCaps::default()
+            },
+        ),
+        (
+            "decoded",
+            BudgetCaps {
+                decoded_bytes: 1,
+                ..BudgetCaps::default()
+            },
+        ),
+        (
+            "records",
+            BudgetCaps {
+                records: 1,
+                ..BudgetCaps::default()
+            },
+        ),
+        (
+            "live",
+            BudgetCaps {
+                live_bytes: 1,
+                ..BudgetCaps::default()
+            },
+        ),
+        (
+            "branch",
+            BudgetCaps {
+                branch_bytes: 1,
+                ..BudgetCaps::default()
+            },
+        ),
+        (
+            "scratch_bytes",
+            BudgetCaps {
+                scratch_bytes: 1,
+                ..BudgetCaps::default()
+            },
+        ),
+        (
+            "scratch_artifacts",
+            BudgetCaps {
+                scratch_artifacts: 1,
+                ..BudgetCaps::default()
+            },
+        ),
     ];
-    for (name,caps) in categories {
-        let out=TestHarness::start_with_caps(&t.plan(),&t.path,&AtomicBool::new(false),caps).unwrap();
-        assert_eq!(out.status,EphemeralStatus::Failed,"category: {name} {:?}",out.error);
-        assert_eq!(out.live_after_teardown,Default::default(),"category: {name}");
-        assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(),before);
-        assert_eq!(fs::metadata(t.path.join("in/input.json")).unwrap().modified().unwrap(),modified);
-        println!("R2_G1_LOWER_CAP_REJECTED={name} PEAK={:?}",out.peaks);
+    for (name, caps) in categories {
+        let out = TestHarness::start_with_caps(&t.plan(), &t.path, &AtomicBool::new(false), caps)
+            .unwrap();
+        assert_eq!(
+            out.status,
+            EphemeralStatus::Failed,
+            "category: {name} {:?}",
+            out.error
+        );
+        assert_eq!(
+            out.live_after_teardown,
+            Default::default(),
+            "category: {name}"
+        );
+        assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(), before);
+        assert_eq!(
+            fs::metadata(t.path.join("in/input.json"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            modified
+        );
+        println!("R2_G1_LOWER_CAP_REJECTED={name} PEAK={:?}", out.peaks);
     }
 }
 #[test]
-fn r2_g1_fault_during_second_scratch_write_is_uncertain_and_leak_free(){
-    let t=Root::new();t.add("input.json",INPUT);
-    let bytes=fs::read(t.path.join("in/input.json")).unwrap();
-    let result=TestHarness::start_with_caps_and_fault(
-        &t.plan(),&t.path,&AtomicBool::new(false),BudgetCaps::default(),
+fn r2_g1_fault_during_second_scratch_write_is_uncertain_and_leak_free() {
+    let t = Root::new();
+    t.add("input.json", INPUT);
+    let bytes = fs::read(t.path.join("in/input.json")).unwrap();
+    let result = TestHarness::start_with_caps_and_fault(
+        &t.plan(),
+        &t.path,
+        &AtomicBool::new(false),
+        BudgetCaps::default(),
         InjectedFault::FailDuringSinkWrite(1),
-    ).unwrap();
-    assert_eq!(result.status,EphemeralStatus::Failed);
-    assert_eq!(result.outputs,vec![BranchStatus::ScratchWritten,BranchStatus::Unknown]);
-    assert_eq!(result.scratch_paths.len(),2);
-    assert_eq!(fs::read(&result.scratch_paths[1]).unwrap().len(),11);
-    assert_eq!(result.peaks.scratch_artifacts,2);
-    assert_eq!(result.live_after_teardown,Default::default());
-    assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(),bytes);
+    )
+    .unwrap();
+    assert_eq!(result.status, EphemeralStatus::Failed);
+    assert_eq!(
+        result.outputs,
+        vec![BranchStatus::ScratchWritten, BranchStatus::Unknown]
+    );
+    assert_eq!(result.scratch_paths.len(), 2);
+    assert_eq!(fs::read(&result.scratch_paths[1]).unwrap().len(), 11);
+    assert_eq!(result.peaks.scratch_artifacts, 2);
+    assert_eq!(result.live_after_teardown, Default::default());
+    assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(), bytes);
 }

@@ -412,77 +412,92 @@ fn size_add(a: usize, b: usize) -> Result<usize, JsonError> {
     a.checked_add(b).ok_or(JsonError::ResourceExhausted)
 }
 fn escaped_size(text: &str) -> Result<usize, JsonError> {
-    let mut size=2usize;
+    let mut size = 2usize;
     for c in text.chars() {
-        let n=match c {
-            '"'|'\\'|'\n'|'\r'|'\t'=>2,
+        let n = match c {
+            '"' | '\\' | '\n' | '\r' | '\t' => 2,
             c if c <= '\u{001f}' => 6,
-            c if c as u32 > 0xffff =>12,
-            c if c as u32 > 0x7f =>6,
-            _=>1,
+            c if c as u32 > 0xffff => 12,
+            c if c as u32 > 0x7f => 6,
+            _ => 1,
         };
-        size=size_add(size,n)?;
+        size = size_add(size, n)?;
     }
     Ok(size)
 }
-fn map_size(map: &BTreeMap<String, Datum>, depth:usize) -> Result<usize,JsonError> {
-    if depth>JSON_MAX_DEPTH {return Err(JsonError::ResourceExhausted);}
-    let mut n=2usize;
-    for (idx,(k,v)) in map.iter().enumerate(){
-        if idx>0{n=size_add(n,1)?;}
-        n=size_add(n,escaped_size(k)?)?;
-        n=size_add(n,1)?;
-        n=size_add(n,datum_size(v,depth+1)?)?;
+fn map_size(map: &BTreeMap<String, Datum>, depth: usize) -> Result<usize, JsonError> {
+    if depth > JSON_MAX_DEPTH {
+        return Err(JsonError::ResourceExhausted);
+    }
+    let mut n = 2usize;
+    for (idx, (k, v)) in map.iter().enumerate() {
+        if idx > 0 {
+            n = size_add(n, 1)?;
+        }
+        n = size_add(n, escaped_size(k)?)?;
+        n = size_add(n, 1)?;
+        n = size_add(n, datum_size(v, depth + 1)?)?;
     }
     Ok(n)
 }
-fn datum_size(v:&Datum,depth:usize)->Result<usize,JsonError>{
-    if depth>JSON_MAX_DEPTH{return Err(JsonError::ResourceExhausted);}
+fn datum_size(v: &Datum, depth: usize) -> Result<usize, JsonError> {
+    if depth > JSON_MAX_DEPTH {
+        return Err(JsonError::ResourceExhausted);
+    }
     match v {
-        Datum::Null=>Ok(4),
-        Datum::Boolean(b)=>Ok(if *b{4}else{5}),
-        Datum::Signed(x)=>Ok(x.to_string().len()),
-        Datum::Unsigned(x)=>Ok(x.to_string().len()),
-        Datum::BigInteger(x)=>Ok(x.as_str().len()),
-        Datum::String(x)=>escaped_size(x),
-        Datum::Array(values)=>{
-            let mut size=2usize;
-            for (idx,v) in values.iter().enumerate(){
-                if idx>0{size=size_add(size,1)?;}
-                size=size_add(size,datum_size(v,depth+1)?)?;
+        Datum::Null => Ok(4),
+        Datum::Boolean(b) => Ok(if *b { 4 } else { 5 }),
+        Datum::Signed(x) => Ok(x.to_string().len()),
+        Datum::Unsigned(x) => Ok(x.to_string().len()),
+        Datum::BigInteger(x) => Ok(x.as_str().len()),
+        Datum::String(x) => escaped_size(x),
+        Datum::Array(values) => {
+            let mut size = 2usize;
+            for (idx, v) in values.iter().enumerate() {
+                if idx > 0 {
+                    size = size_add(size, 1)?;
+                }
+                size = size_add(size, datum_size(v, depth + 1)?)?;
             }
             Ok(size)
         }
-        Datum::Object(map)=>map_size(map,depth+1),
-        Datum::Bytes(_)|Datum::Timestamp(_)|Datum::Decimal(_)|Datum::Float(_)=>
-            Err(JsonError::UnsupportedType),
+        Datum::Object(map) => map_size(map, depth + 1),
+        Datum::Bytes(_) | Datum::Timestamp(_) | Datum::Decimal(_) | Datum::Float(_) => {
+            Err(JsonError::UnsupportedType)
+        }
     }
 }
-pub fn encoded_one_size(row:&BTreeMap<String,Datum>)->Result<usize,JsonError>{
-    let size=map_size(row,0)?;
-    if size>ENCODED_RECORD_MAX{return Err(JsonError::ResourceExhausted);}
+pub fn encoded_one_size(row: &BTreeMap<String, Datum>) -> Result<usize, JsonError> {
+    let size = map_size(row, 0)?;
+    if size > ENCODED_RECORD_MAX {
+        return Err(JsonError::ResourceExhausted);
+    }
     Ok(size)
 }
 /// Returns (whole-array bytes, largest single record frame bytes).
 /// No output buffer is allocated during preflight.
-pub fn encoded_array_size(rows:&[RecordEnvelope])->Result<(usize,usize),JsonError>{
-    let mut total=2usize;
-    let mut max_record=0usize;
-    for (idx,row) in rows.iter().enumerate(){
-        if idx>0{total=size_add(total,1)?;}
-        let size=encoded_one_size(&row.data)?;
-        total=size_add(total,size)?;
-        max_record=max_record.max(size);
+pub fn encoded_array_size(rows: &[RecordEnvelope]) -> Result<(usize, usize), JsonError> {
+    let mut total = 2usize;
+    let mut max_record = 0usize;
+    for (idx, row) in rows.iter().enumerate() {
+        if idx > 0 {
+            total = size_add(total, 1)?;
+        }
+        let size = encoded_one_size(&row.data)?;
+        total = size_add(total, size)?;
+        max_record = max_record.max(size);
     }
-    if total>SCRATCH_RUN_MAX{return Err(JsonError::ResourceExhausted);}
-    Ok((total,max_record))
+    if total > SCRATCH_RUN_MAX {
+        return Err(JsonError::ResourceExhausted);
+    }
+    Ok((total, max_record))
 }
 /// Enforce the 1MiB per-record output cap *before* creating an external sink.
 pub fn encode_one(row: &BTreeMap<String, Datum>) -> Result<Vec<u8>, JsonError> {
-    let expected=encoded_one_size(row)?;
+    let expected = encoded_one_size(row)?;
     let mut buf = Vec::with_capacity(expected);
     encode_map(&mut buf, row, ENCODED_RECORD_MAX, 0)?;
-    debug_assert_eq!(buf.len(),expected);
+    debug_assert_eq!(buf.len(), expected);
     Ok(buf)
 }
 /// Encoding emits one JSON array. No fsync/delivery or file I/O is performed.
@@ -498,7 +513,7 @@ pub fn encode_array(rows: &[RecordEnvelope]) -> Result<Vec<u8>, JsonError> {
         push(&mut buf, &frame, SCRATCH_RUN_MAX)?;
     }
     push(&mut buf, b"]", SCRATCH_RUN_MAX)?;
-    debug_assert_eq!(buf.len(),expected);
+    debug_assert_eq!(buf.len(), expected);
     Ok(buf)
 }
 #[cfg(test)]
@@ -518,20 +533,26 @@ mod tests {
     }
     #[test]
     fn r2_g1_json_size_preflight_is_exact_for_ascii_and_escaped_unicode() {
-        let values=[
-            BTreeMap::from([("text".into(),Datum::String("hello".into()))]),
-            BTreeMap::from([("text".into(),Datum::String("é💡\n".into()))]),
-            BTreeMap::from([("num".into(),Datum::bigint("18446744073709551616").unwrap())]),
-            BTreeMap::from([("items".into(),Datum::Array(vec![Datum::Null,Datum::Boolean(true)]))]),
+        let values = [
+            BTreeMap::from([("text".into(), Datum::String("hello".into()))]),
+            BTreeMap::from([("text".into(), Datum::String("é💡\n".into()))]),
+            BTreeMap::from([("num".into(), Datum::bigint("18446744073709551616").unwrap())]),
+            BTreeMap::from([(
+                "items".into(),
+                Datum::Array(vec![Datum::Null, Datum::Boolean(true)]),
+            )]),
         ];
         for v in values {
-            let actual=encode_one(&v).unwrap();
-            assert_eq!(encoded_one_size(&v).unwrap(),actual.len());
+            let actual = encode_one(&v).unwrap();
+            assert_eq!(encoded_one_size(&v).unwrap(), actual.len());
         }
-        let items=vec![row(BTreeMap::from([("name".into(),Datum::String("ñ".into()))]))];
-        let (sz,record_max)=encoded_array_size(&items).unwrap();
-        assert_eq!(sz,encode_array(&items).unwrap().len());
-        assert_eq!(record_max,encoded_one_size(&items[0].data).unwrap());
+        let items = vec![row(BTreeMap::from([(
+            "name".into(),
+            Datum::String("ñ".into()),
+        )]))];
+        let (sz, record_max) = encoded_array_size(&items).unwrap();
+        assert_eq!(sz, encode_array(&items).unwrap().len());
+        assert_eq!(record_max, encoded_one_size(&items[0].data).unwrap());
     }
     #[test]
     fn comp_04_object_array_empty_and_scalar_rejection() {

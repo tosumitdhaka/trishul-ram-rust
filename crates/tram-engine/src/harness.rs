@@ -285,7 +285,9 @@ fn source_link_is_unique(source: &cap_std::fs::Metadata) -> bool {
 }
 fn pause_for_adversarial_test(cancelled: &AtomicBool) -> Result<(), HarnessError> {
     for _ in 0..25 {
-        if cancelled.load(Ordering::Acquire) { return Err(HarnessError::UnsafePlan); }
+        if cancelled.load(Ordering::Acquire) {
+            return Err(HarnessError::UnsafePlan);
+        }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     Ok(())
@@ -575,18 +577,28 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
     for (slot, records) in branches.iter().enumerate() {
         // Exact output size and largest temporary per-record frame are
         // computed without allocating encoded buffers.
-        let (length, max_frame) = codec::encoded_array_size(records)
-            .map_err(|_| HarnessError::ResourceExhausted)?;
-        if length > BRANCH_PENDING_MAX { return Err(HarnessError::ResourceExhausted); }
+        let (length, max_frame) =
+            codec::encoded_array_size(records).map_err(|_| HarnessError::ResourceExhausted)?;
+        if length > BRANCH_PENDING_MAX {
+            return Err(HarnessError::ResourceExhausted);
+        }
         // Encoded output lives alongside still-retained branch records:
         // charge both pending branch occupancy and run-wide live capacity.
-        let pending = ledger.reserve(Category::BranchBytes(slot), length)
+        let pending = ledger
+            .reserve(Category::BranchBytes(slot), length)
             .map_err(|_| HarnessError::ResourceExhausted)?;
-        let live = ledger.reserve(Category::LiveBytes,
-            length.checked_add(max_frame).ok_or(HarnessError::ResourceExhausted)?)
+        let live = ledger
+            .reserve(
+                Category::LiveBytes,
+                length
+                    .checked_add(max_frame)
+                    .ok_or(HarnessError::ResourceExhausted)?,
+            )
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let bytes = codec::encode_array(records).map_err(|_| HarnessError::ResourceExhausted)?;
-        if bytes.len() != length { return Err(HarnessError::ResourceExhausted); }
+        if bytes.len() != length {
+            return Err(HarnessError::ResourceExhausted);
+        }
         encoded_guards.push(live);
         pending_guards.push(pending);
         encoded.push(bytes);

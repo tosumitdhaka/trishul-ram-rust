@@ -10,14 +10,16 @@ pub enum ObligationError { Sealed, NotSealed, Duplicate, OutOfBounds, Undecided,
 pub enum RecordDisposition { Retained, FilteredGlobal, EmptySourceUnit, Invalid }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SimulatedBarrier {
-    sealed:bool, decoded_count:usize, record_dispositions: Vec<RecordDisposition>,
+    sealed:bool, decoded_count:usize, expected_slots:usize, record_dispositions: Vec<RecordDisposition>,
     branches:BTreeMap<(usize,usize),Disposition>,
     checkpoint_committed:bool,
 }
 impl SimulatedBarrier {
-    pub fn new()->Self {
+    pub fn new()->Self { Self::with_slots(1) }
+    pub fn with_slots(slots:usize)->Self {
+        assert!((1..=2).contains(&slots),"P1 test simulator has one or two sink slots");
         Self {
-            sealed:false,decoded_count:0,record_dispositions:Vec::new(),
+            sealed:false,decoded_count:0,expected_slots:slots,record_dispositions:Vec::new(),
             branches:BTreeMap::new(),checkpoint_committed:false,
         }
     }
@@ -36,12 +38,13 @@ impl SimulatedBarrier {
     }
     pub fn branch(&mut self,index:usize,slot:usize,disposition:Disposition)->Result<(),ObligationError>{
         if self.sealed{return Err(ObligationError::Sealed);}
-        if slot>=2 || self.record_dispositions.get(index)!=Some(&RecordDisposition::Retained){
+        if slot>=self.expected_slots || self.record_dispositions.get(index)!=Some(&RecordDisposition::Retained){
             return Err(ObligationError::OutOfBounds);
         }
-        if self.branches.insert((index,slot),disposition).is_some(){
+        if self.branches.contains_key(&(index,slot)) {
             return Err(ObligationError::Duplicate);
         }
+        self.branches.insert((index,slot),disposition);
         Ok(())
     }
     pub fn seal(&mut self)->Result<(),ObligationError>{
@@ -65,7 +68,7 @@ impl SimulatedBarrier {
             && self.branches.values().all(|d|matches!(d,Disposition::Filtered|Disposition::Confirmed))
             && self.record_dispositions.iter().enumerate().all(|(i,d)|
                 *d!=RecordDisposition::Retained ||
-                self.branches.keys().any(|(record,_)|*record==i))
+                (0..self.expected_slots).all(|slot|self.branches.contains_key(&(i,slot))))
     }
     /// No P1 engine invokes or has access to a destructive ack API.
     /// This predicate models what a future durable checkpoint would require.
@@ -86,7 +89,7 @@ mod tests {
     use super::*;
     #[test]
     fn ack_01_seal_two_branches_and_one_filtered(){
-        let mut barrier=SimulatedBarrier::new();
+        let mut barrier=SimulatedBarrier::with_slots(2);
         for _ in 0..3 {barrier.open_record().unwrap();}
         barrier.mark_global_filtered(1).unwrap();
         for index in [0,2]{
@@ -106,7 +109,7 @@ mod tests {
     }
     #[test]
     fn ack_02_branch_a_confirmed_b_unknown_replay_does_not_ack(){
-        let mut barrier=SimulatedBarrier::new();
+        let mut barrier=SimulatedBarrier::with_slots(2);
         let row=barrier.open_record().unwrap();
         barrier.branch(row,0,Disposition::Pending).unwrap();
         barrier.branch(row,1,Disposition::Pending).unwrap();
@@ -136,6 +139,16 @@ mod tests {
         unexpected.open_record().unwrap();
         unexpected.seal().unwrap();
         assert!(!unexpected.logical_decided());
+    }
+    #[test]
+    fn ack_01_missing_branch_and_duplicate_insertion_cannot_be_silent(){
+        let mut barrier=SimulatedBarrier::with_slots(2);
+        let row=barrier.open_record().unwrap();
+        barrier.branch(row,0,Disposition::Pending).unwrap();
+        assert_eq!(barrier.branch(row,0,Disposition::Confirmed),Err(ObligationError::Duplicate));
+        barrier.seal().unwrap();
+        barrier.simulated_receipt(row,0,Disposition::Confirmed).unwrap();
+        assert!(!barrier.logical_decided(),"missing B cannot be treated as decided");
     }
     #[test]
     fn ack_04_checkpoint_failure_prevents_ack_eligibility(){

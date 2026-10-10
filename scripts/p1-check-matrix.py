@@ -21,10 +21,25 @@ assert len(sys.argv)==3 and sys.argv[1]=="--executed-log", "execution log mandat
 logs=Path(sys.argv[2]).read_text(encoding="utf-8")
 assert "test result: ok." in logs, "no successful Rust test-run result"
 passed=set()
+pending=None
 for line in logs.splitlines():
-    found=re.search(r"^test (?:[\w]+::)*([\w]+) \.\.\. ok$",line)
+    # Rust --nocapture prints user diagnostics before its terminal standalone
+    # "ok" on a subsequent line, notably the mounted ENOSPC fault test.
+    found=re.search(r"^test (?:[\w]+::)*([\w]+) \.\.\.(.*)$",line)
     if found:
-        passed.add(found.group(1))
+        name, suffix=found.group(1),found.group(2).strip()
+        if suffix=="ok":
+            passed.add(name)
+            pending=None
+        elif suffix.startswith("ignored") or suffix.startswith("FAILED"):
+            pending=None
+        else:
+            pending=name
+    elif line.strip()=="ok" and pending is not None:
+        passed.add(pending)
+        pending=None
+    elif line.strip() in {"FAILED","ignored"}:
+        pending=None
 count=0
 for case in cases:
     assert case["status"] in {"EXERCISED","P2_SIMULATED","DEFERRED_P2"}

@@ -126,6 +126,7 @@ impl TestHarness {
             let meta=input.symlink_metadata(name).map_err(|_|HarnessError::Io)?;
             if meta.file_type().is_symlink() {return Err(HarnessError::PathEscape);}
             if !meta.is_file(){return Err(HarnessError::InvalidSource);}
+            if meta.len()>RAW_FILE_MAX as u64 {return Err(HarnessError::ResourceExhausted);}
             if plan.source.file_pattern=="*" || name.ends_with(".json"){paths.push(name.to_owned());}
             if paths.len()>100 {return Err(HarnessError::ResourceExhausted);}
         }

@@ -64,7 +64,7 @@
 
 ```sh
 # Allowed Stage A only; /tmp root is caller-created, owned, exclusive, mode 0700.
-python3 -m unittest -v experiments/run-iso-001/tools/test_fixture.py  # from tools/ for fixture import
+(cd experiments/run-iso-001/tools && python3 -m unittest -v test_fixture.py)
 python3 experiments/run-iso-001/tools/fixture.py expected-digest
 root="$(mktemp -d /tmp/tram-run-iso-001-XXXXXXXX)"
 chmod 700 "$root"

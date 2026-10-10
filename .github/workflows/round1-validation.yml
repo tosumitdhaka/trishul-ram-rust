@@ -37,3 +37,16 @@ jobs:
       - name: Focused P1 config tests
         if: always()
         run: cargo +1.88.0 test -p tram-config --locked
+
+      - name: Hosted R2 formatting and generated lockfile diagnostics
+        if: always()
+        shell: bash
+        run: |
+          cargo +1.88.0 fmt --all || true
+          cargo +1.88.0 generate-lockfile
+          for f in Cargo.lock crates/tram-engine/src/budget.rs crates/tram-engine/src/transform.rs; do
+            echo "TRAM_R2_ARTIFACT_BEGIN:$f"
+            base64 -w0 "$f"
+            echo
+            echo "TRAM_R2_ARTIFACT_END:$f"
+          done

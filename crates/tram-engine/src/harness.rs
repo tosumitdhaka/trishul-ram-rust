@@ -67,6 +67,7 @@ pub enum BranchStatus {
 pub enum InjectedFault {
     None,
     FailBeforeSink(usize),
+    FailDuringSinkWrite(usize),
     CancelAfterFirstWrite,
     /// Test-only pause after A write, allowing parent to issue SIGKILL.
     PauseAfterFirstWrite,
@@ -627,6 +628,12 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
                 .join(slot_name)
                 .join(&sink.filename_template),
         );
+        if fault == InjectedFault::FailDuringSinkWrite(slot) {
+            let partial = encoded[slot].len().min(11);
+            let _ = file.write_all(&encoded[slot][..partial]);
+            out.outputs[slot] = BranchStatus::Unknown;
+            return Err(HarnessError::Io);
+        }
         if file.write_all(&encoded[slot]).is_err() {
             out.outputs[slot] = BranchStatus::Unknown;
             return Err(HarnessError::Io);

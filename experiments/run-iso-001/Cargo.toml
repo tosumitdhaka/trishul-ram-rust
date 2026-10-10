@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Isolated nested workspace. Intentionally not part of repository root Cargo workspace.
+[workspace]
+resolver = "2"
+members = ["."]
+
+[package]
+name = "run-iso-001-prototype"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.88.0"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[lints.rust]
+unsafe_code = "forbid"

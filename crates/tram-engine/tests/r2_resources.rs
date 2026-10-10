@@ -874,7 +874,7 @@ fn r2_m1_rotated_scratch_directory_cannot_multiply_process_run_budget() {
         "a new scratch inode must not admit a second process"
     );
     assert_eq!(scratch_runs(&root), 0, "new scratch tree must stay empty");
-    assert!(root.path.join("scratch-old").join(first).exists());
+    assert!(root.path.join("scratch-old").join(first.file_name().unwrap()).exists());
     let after = fs::metadata(&source).unwrap();
     assert_eq!(fs::read(&source).unwrap(), INPUT);
     assert_eq!(
@@ -897,30 +897,33 @@ fn r2_m2_legacy_capstd_fifo_open_blocks_until_watchdog_kills_child() {
     let root = Root::new();
     let path = root.path.join("in/old-open.fifo");
     assert!(Command::new("mkfifo").arg(&path).status().unwrap().success());
+    let marker = root.path.join("legacy-open-attempt.marker");
     let exe = std::env::current_exe().unwrap();
     let mut child = Command::new(exe)
         .arg("--exact")
         .arg("r2_m2_child_legacy_capstd_fifo_open")
+        .env("TRAM_P1_M2_LEGACY_MARKER", marker.to_str().unwrap())
         .env("TRAM_P1_M2_LEGACY_FIFO", path.to_str().unwrap())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let mut blocked = false;
-    while Instant::now() < deadline {
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while !marker.exists() {
         if let Some(exit) = child.try_wait().unwrap() {
-            panic!("legacy FIFO open unexpectedly returned: {exit}");
+            panic!("legacy FIFO child exited before open: {exit}");
         }
-        if deadline.saturating_duration_since(Instant::now()) < Duration::from_millis(250) {
-            blocked = true;
-            break;
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("legacy FIFO child never reached open before watchdog");
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(5));
     }
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(child.try_wait().unwrap().is_none(), "legacy FIFO open did not block");
     child.kill().unwrap();
     child.wait().unwrap();
-    assert!(blocked, "legacy cap-std blocking open was not reproduced");
 }
 
 #[test]
@@ -936,7 +939,8 @@ fn r2_m2_child_legacy_capstd_fifo_open() {
     .unwrap();
     // This is the exact old input.open(name) primitive. The parent always
     // watchdog-kills this isolated child; never call it in the runner thread.
-    let _handle = dir.open(path.file_name().unwrap()).unwrap();
+    fs::write(std::env::var("TRAM_P1_M2_LEGACY_MARKER").unwrap(), b"opening").unwrap();
+    let _handle = dir.open(Path::new(path.file_name().unwrap())).unwrap();
     panic!("legacy FIFO open unexpectedly returned");
 }
 

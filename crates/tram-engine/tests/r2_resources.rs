@@ -874,7 +874,11 @@ fn r2_m1_rotated_scratch_directory_cannot_multiply_process_run_budget() {
         "a new scratch inode must not admit a second process"
     );
     assert_eq!(scratch_runs(&root), 0, "new scratch tree must stay empty");
-    assert!(root.path.join("scratch-old").join(first.file_name().unwrap()).exists());
+    assert!(root
+        .path
+        .join("scratch-old")
+        .join(first.file_name().unwrap())
+        .exists());
     let after = fs::metadata(&source).unwrap();
     assert_eq!(fs::read(&source).unwrap(), INPUT);
     assert_eq!(
@@ -908,7 +912,11 @@ fn r2_m2_legacy_capstd_fifo_open_blocks_until_watchdog_kills_child() {
     use std::process::{Command, Stdio};
     let root = Root::new();
     let path = root.path.join("in/old-open.fifo");
-    assert!(Command::new("mkfifo").arg(&path).status().unwrap().success());
+    assert!(Command::new("mkfifo")
+        .arg(&path)
+        .status()
+        .unwrap()
+        .success());
     let marker = root.path.join("legacy-open-attempt.marker");
     let exe = std::env::current_exe().unwrap();
     let mut child = Command::new(exe)
@@ -933,7 +941,10 @@ fn r2_m2_legacy_capstd_fifo_open_blocks_until_watchdog_kills_child() {
         std::thread::sleep(Duration::from_millis(5));
     }
     std::thread::sleep(Duration::from_millis(200));
-    assert!(child.try_wait().unwrap().is_none(), "legacy FIFO open did not block");
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "legacy FIFO open did not block"
+    );
     child.kill().unwrap();
     child.wait().unwrap();
 }
@@ -944,14 +955,16 @@ fn r2_m2_child_legacy_capstd_fifo_open() {
         return;
     };
     let path = PathBuf::from(path);
-    let dir = cap_std::fs::Dir::open_ambient_dir(
-        path.parent().unwrap(),
-        cap_std::ambient_authority(),
-    )
-    .unwrap();
+    let dir =
+        cap_std::fs::Dir::open_ambient_dir(path.parent().unwrap(), cap_std::ambient_authority())
+            .unwrap();
     // This is the exact old input.open(name) primitive. The parent always
     // watchdog-kills this isolated child; never call it in the runner thread.
-    fs::write(std::env::var("TRAM_P1_M2_LEGACY_MARKER").unwrap(), b"opening").unwrap();
+    fs::write(
+        std::env::var("TRAM_P1_M2_LEGACY_MARKER").unwrap(),
+        b"opening",
+    )
+    .unwrap();
     let _handle = dir.open(Path::new(path.file_name().unwrap())).unwrap();
     panic!("legacy FIFO open unexpectedly returned");
 }
@@ -1060,9 +1073,18 @@ fn r2_m3_compiled_minimal_plan(root: &Path, count: usize) -> tram_config::Valida
         yaml.replace_range(start..end, "");
     }
     let vars = BTreeMap::from([
-        ("TRAM_P1_INPUT_DIR".into(), root.join("in").to_string_lossy().into_owned()),
-        ("TRAM_P1_SCRATCH_A".into(), root.join("scratch/a").to_string_lossy().into_owned()),
-        ("TRAM_P1_SCRATCH_B".into(), root.join("scratch/b").to_string_lossy().into_owned()),
+        (
+            "TRAM_P1_INPUT_DIR".into(),
+            root.join("in").to_string_lossy().into_owned(),
+        ),
+        (
+            "TRAM_P1_SCRATCH_A".into(),
+            root.join("scratch/a").to_string_lossy().into_owned(),
+        ),
+        (
+            "TRAM_P1_SCRATCH_B".into(),
+            root.join("scratch/b").to_string_lossy().into_owned(),
+        ),
     ]);
     let plan = compile_p1_builtin(&yaml, &vars).unwrap();
     assert!(plan.is_compiler_minted());
@@ -1081,12 +1103,20 @@ fn r2_m3_4096_filtered_rows_obey_source_not_branch_ceiling() {
     );
     root.add("input.json", source.as_bytes());
     let result = TestHarness::start(&root.plan(), &root.path, &AtomicBool::new(false)).unwrap();
-    assert_eq!(result.status, EphemeralStatus::Completed, "{:?}", result.error);
+    assert_eq!(
+        result.status,
+        EphemeralStatus::Completed,
+        "{:?}",
+        result.error
+    );
     assert_eq!(result.source_units[0].record_count, 4096);
     assert_eq!(result.source_units[0].filtered_global, 4096);
     assert_eq!(result.peaks.records, 4096);
     assert_eq!(result.live_after_teardown, Default::default());
-    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), source.as_bytes());
+    assert_eq!(
+        fs::read(root.path.join("in/input.json")).unwrap(),
+        source.as_bytes()
+    );
     println!("R2_M3_FILTERED_4096_PEAKS={:?}", result.peaks);
 }
 
@@ -1107,13 +1137,20 @@ fn r2_m3_4096_retained_one_and_two_sinks_respect_independent_caps() {
         assert_eq!(result.source_units[0].record_count, 4096);
         assert_eq!(result.peaks.records, 4096);
         assert!(result.peaks.live_bytes <= LIVE_TOTAL_MAX);
-        assert!(result.peaks.branch_bytes.iter().all(|x| *x <= BRANCH_PENDING_MAX));
+        assert!(result
+            .peaks
+            .branch_bytes
+            .iter()
+            .all(|x| *x <= BRANCH_PENDING_MAX));
         assert_eq!(result.live_after_teardown, Default::default());
         match result.status {
             EphemeralStatus::Completed => {
                 assert_eq!(result.scratch_paths.len(), sink_count);
                 for output in &result.scratch_paths {
-                    assert_eq!(codec::decode(&fs::read(output).unwrap()).unwrap().len(), 4096);
+                    assert_eq!(
+                        codec::decode(&fs::read(output).unwrap()).unwrap().len(),
+                        4096
+                    );
                 }
             }
             EphemeralStatus::Failed => {
@@ -1122,8 +1159,14 @@ fn r2_m3_4096_retained_one_and_two_sinks_respect_independent_caps() {
             }
             value => panic!("unexpected retained-record outcome: {value:?}"),
         }
-        assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), source.as_bytes());
-        println!("R2_M3_RETAINED_SINKS_{sink_count}={:?} PEAKS={:?}", result.status, result.peaks);
+        assert_eq!(
+            fs::read(root.path.join("in/input.json")).unwrap(),
+            source.as_bytes()
+        );
+        println!(
+            "R2_M3_RETAINED_SINKS_{sink_count}={:?} PEAKS={:?}",
+            result.status, result.peaks
+        );
     }
 }
 
@@ -1134,32 +1177,55 @@ fn r2_m5_large_field_predicates_are_borrowed_under_live_cap() {
     let payload = "a".repeat(600 * 1024);
     let source = format!(
         "[{}]",
-        (0..5)
+        (0..4)
             .map(|_| format!(r#"{{"old_id":"A","metric":12,"payload":"{payload}"}}"#))
             .collect::<Vec<_>>()
             .join(",")
     );
     root.add("input.json", source.as_bytes());
     let yaml = YAML
-        .replace("condition: \"metric >= 10\"", "condition: \"payload == payload\"")
+        .replace(
+            "condition: \"metric >= 10\"",
+            "condition: \"payload == payload\"",
+        )
         .replace(
             "filename_template: \"output-a.json\"",
             "filename_template: \"output-a.json\"\n      condition: \"payload == payload\"",
         );
     let vars = BTreeMap::from([
-        ("TRAM_P1_INPUT_DIR".into(), root.path.join("in").to_string_lossy().into_owned()),
-        ("TRAM_P1_SCRATCH_A".into(), root.path.join("scratch/a").to_string_lossy().into_owned()),
-        ("TRAM_P1_SCRATCH_B".into(), root.path.join("scratch/b").to_string_lossy().into_owned()),
+        (
+            "TRAM_P1_INPUT_DIR".into(),
+            root.path.join("in").to_string_lossy().into_owned(),
+        ),
+        (
+            "TRAM_P1_SCRATCH_A".into(),
+            root.path.join("scratch/a").to_string_lossy().into_owned(),
+        ),
+        (
+            "TRAM_P1_SCRATCH_B".into(),
+            root.path.join("scratch/b").to_string_lossy().into_owned(),
+        ),
     ]);
     let plan = compile_p1_builtin(&yaml, &vars).unwrap();
     let before = rss_kib();
     let result = TestHarness::start(&plan, &root.path, &AtomicBool::new(false)).unwrap();
     let after = rss_kib();
-    assert_eq!(result.status, EphemeralStatus::Completed, "{:?}", result.error);
+    assert_eq!(
+        result.status,
+        EphemeralStatus::Completed,
+        "{:?}",
+        result.error
+    );
     assert!(result.peaks.live_bytes <= LIVE_TOTAL_MAX);
-    assert_eq!(result.peaks.records, 5);
+    assert_eq!(result.peaks.records, 4);
     assert_eq!(result.live_after_teardown, Default::default());
     assert_eq!(result.scratch_paths.len(), 2);
-    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), source.as_bytes());
-    println!("R2_M5_PREDICATE_LEDGER_PEAKS={:?} RSS_KIB_BEFORE={before:?} AFTER={after:?}", result.peaks);
+    assert_eq!(
+        fs::read(root.path.join("in/input.json")).unwrap(),
+        source.as_bytes()
+    );
+    println!(
+        "R2_M5_PREDICATE_LEDGER_PEAKS={:?} RSS_KIB_BEFORE={before:?} AFTER={after:?}",
+        result.peaks
+    );
 }

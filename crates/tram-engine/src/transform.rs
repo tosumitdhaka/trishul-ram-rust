@@ -247,10 +247,19 @@ mod tests {
         let row = BTreeMap::from([("payload".into(), Datum::String(large.clone()))]);
         let field = Expression::Field("payload".into());
         let literal = Expression::Literal(Datum::String(large));
-        assert!(matches!(evaluate_view(&field, &row).unwrap(), Cow::Borrowed(_)));
-        assert!(matches!(evaluate_view(&literal, &row).unwrap(), Cow::Borrowed(_)));
+        assert!(matches!(
+            evaluate_view(&field, &row).unwrap(),
+            Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            evaluate_view(&literal, &row).unwrap(),
+            Cow::Borrowed(_)
+        ));
         let equals = binary(BinaryOp::Eq, field.clone(), literal);
-        assert_eq!(evaluate_view(&equals, &row).unwrap().as_ref(), &Datum::Boolean(true));
+        assert_eq!(
+            evaluate_view(&equals, &row).unwrap().as_ref(),
+            &Datum::Boolean(true)
+        );
         let false_and_missing = binary(
             BinaryOp::And,
             Expression::Literal(Datum::Boolean(false)),

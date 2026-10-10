@@ -554,7 +554,11 @@ fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize, HarnessErro
             .parent_record
             .as_ref()
             .map_or(0, |v| v.as_str().len()),
-        record.lineage.branch.as_ref().map_or(0, |v| v.as_str().len()),
+        record
+            .lineage
+            .branch
+            .as_ref()
+            .map_or(0, |v| v.as_str().len()),
         record
             .source_position
             .as_ref()
@@ -565,14 +569,20 @@ fn estimate_envelope_owned(record: &RecordEnvelope) -> Result<usize, HarnessErro
         .checked_add(512)
         .ok_or(HarnessError::ResourceExhausted)?;
     for owned in identities {
-        total = total.checked_add(owned).ok_or(HarnessError::ResourceExhausted)?;
+        total = total
+            .checked_add(owned)
+            .ok_or(HarnessError::ResourceExhausted)?;
     }
     for fields in [&record.data, &record.metadata] {
         for (key, value) in fields {
             total = total
                 .checked_add(key.len())
                 .and_then(|n| n.checked_add(128))
-                .and_then(|n| estimate_datum_owned(value).ok().and_then(|v| n.checked_add(v)))
+                .and_then(|n| {
+                    estimate_datum_owned(value)
+                        .ok()
+                        .and_then(|v| n.checked_add(v))
+                })
                 .ok_or(HarnessError::ResourceExhausted)?;
         }
     }

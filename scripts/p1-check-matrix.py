@@ -26,11 +26,11 @@ target=None
 for line in logs.splitlines():
     # Cargo announces each test executable. Keep the whole Rust module path
     # and the executable identity, never accept bare-name collisions.
-    running=re.search(r"Running .*\\(target/debug/deps/([A-Za-z_][A-Za-z_0-9]*)-[a-f0-9]+\\)",line)
+    running=re.search(r"Running .*\(target/debug/deps/([A-Za-z_][A-Za-z_0-9]*)-[a-f0-9]+\)",line)
     if running:
         target=running.group(1)
         pending=None
-    found=re.search(r"^test ([\\w:]+) \\.\\.\\.(.*)$",line)
+    found=re.search(r"^test ([\w:]+) \.\.\.(.*)$",line)
     if found:
         assert target is not None, f"test name without binary identity: {line}"
         name,suffix=found.group(1),found.group(2).strip()

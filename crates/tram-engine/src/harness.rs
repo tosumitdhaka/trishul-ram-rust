@@ -277,8 +277,25 @@ impl TestHarness {
         // The caller-trusted root is the stable identity, unlike its rotatable
         // scratch child. This exclusive nonblocking flock is released by RAII
         // on error/unwind and by the kernel on SIGKILL.
-        rustix::fs::flock(&root, rustix::fs::FlockOperation::NonBlockingLockExclusive)
-            .map_err(|_| HarnessError::ResourceExhausted)?;
+        // cap-std can hold an O_PATH-style root handle; flock requires an
+        // actual read-opened directory descriptor. Reopen "." relative to the
+        // trusted root capability: the inode remains stable under scratch
+        // rotation and this FD is held until the run exits.
+        let root_lock_fd = rustix::fs::openat(
+            &root,
+            ".",
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(|_| HarnessError::PathEscape)?;
+        rustix::fs::flock(
+            &root_lock_fd,
+            rustix::fs::FlockOperation::NonBlockingLockExclusive,
+        )
+        .map_err(|_| HarnessError::ResourceExhausted)?;
         use cap_std::fs::MetadataExt;
         let input_preflight = root
             .symlink_metadata("in")

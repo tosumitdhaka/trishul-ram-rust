@@ -2,7 +2,7 @@
 
 Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-ram), targeting equivalent user-facing capabilities through a new execution architecture rather than a mechanical port.
 
-> **Governance status (2026-10-10):** Phase 0 architecture approved and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30` by independent review + Orchestrator. Phase 1 is **ephemeral-only**, not production; its R2 candidate `9757aaf29665d5f774e15583e1e4f23b140b9799` has independent SOURCE_REVIEW_PASS and EXECUTOR_PASS, subject to an explicit serial-only test limitation and pending separate Orchestrator R2 acceptance. [Post-P1 P2-readiness amendments](docs/phase-0/proposals/p2-readiness-handoff.md) are **proposed, not approved**.
+> **Governance status (2026-10-10):** Phase 0 architecture approved and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30` by independent review + Orchestrator. Phase 1 is **ephemeral-only**, not production; its R2 candidate `9757aaf29665d5f774e15583e1e4f23b140b9799` has independent SOURCE_REVIEW_PASS and EXECUTOR_PASS, **formally accepted** by [Orchestrator PHASE_1_R2_ACCEPTED](https://github.com/tosumitdhaka/trishul-ram-rust/issues/2#issuecomment-6099860467) for the **non-production scratch-only** profile, subject to mandatory `RUST_TEST_THREADS=1` serial testing and known default-parallel failures. [Post-P1 P2-readiness amendments](docs/phase-0/proposals/p2-readiness-handoff.md) are **proposed, not approved**.
 
 ## Design principles
 

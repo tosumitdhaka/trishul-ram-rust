@@ -1,6 +1,6 @@
 # P0-R2 — Source units, fan-out lineage and acknowledgement barrier
 
-**Status:** Phase 0 design remediation candidate; P2+ production delivery specification. P1 uses only [ephemeral semantics](p1-safety-boundary.md), but its test harness must exercise the *logical* lineage/obligation evaluator with simulated receipts and no destructive acknowledgement.
+**Status:** Phase 0 approved/frozen source-unit obligation contract at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`; P2+ production delivery implementation remains a later gate. P1 uses only [ephemeral semantics](p1-safety-boundary.md), but its test harness must exercise the *logical* lineage/obligation evaluator with simulated receipts and no destructive acknowledgement.
 
 ## 1. Immutable identity model
 
@@ -65,4 +65,4 @@ Recovery enumerates persistent manifests: staged-only is retryable, final matchi
 
 ## Post-freeze proposed connector/revision exercise (NOT APPROVED)
 
-See [ADR-016](proposals/adr-016-serialization-sources-persistence-gates.md) for a review proposal mapping this existing generic source-unit contract to streaming CDR files, Kafka, UDP SNMP traps and HTTP webhooks. The identity formula above already binds `BranchObligationId` and `EffectId` to the immutable pipeline revision; recovery must use the original committed plan/identity rather than silently adopting a changed configuration. These are acceptance/re-entry proposals, not a new P1 connector promise or relaxed source-ack rule.
+See [ADR-016](proposals/adr-016-serialization-sources-persistence-gates.md) for a review proposal mapping this existing generic source-unit contract to streaming CDR files, Kafka, UDP SNMP traps and HTTP webhooks. The original identity formula binds `BranchObligationId` and `EffectId` to the immutable pipeline revision. Proposed [SRC-03](proposals/adr-016-serialization-sources-persistence-gates.md) additionally requires a durable **original-plan snapshot lookup** and a **cross-revision source-generation exclusion key independent of pipeline revision**, with manager CAS and blocked acknowledgement frontier. A newer revision cannot bypass an unresolved original A-confirmed/B-unknown guard by minting different EffectIds; the old receipt remains original and B remains uncertain/idempotently reconciled. These are reviewable **future P2 design/acceptance requirements**, not approved P1 connector coverage or relaxation of the frozen source ack predicate.

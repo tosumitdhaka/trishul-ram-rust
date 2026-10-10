@@ -613,3 +613,22 @@ fn r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown() {
     println!("R2_G1_MULTIFILE_LEDGER_PEAKS={:?}", result.peaks);
     println!("R2_G1_MULTIFILE_RESERVATIONS_RELEASED=true");
 }
+
+
+#[test]
+fn r2_g1_exact_four_mib_input_is_admissible_without_fifth_byte(){
+    let t=Root::new();
+    let minimal=format!(r#"[{{"old_id":"B","metric":4,"pad":"{}"}}]"#,"");
+    let pad="x".repeat(RAW_FILE_MAX-minimal.len());
+    let content=format!(r#"[{{"old_id":"B","metric":4,"pad":"{pad}"}}]"#);
+    assert_eq!(content.len(),RAW_FILE_MAX);
+    t.add("input.json",content.as_bytes());
+    let out=TestHarness::start(&t.plan(),&t.path,&AtomicBool::new(false)).unwrap();
+    assert_eq!(out.status,EphemeralStatus::Completed,"{:?}",out.error);
+    assert_eq!(out.source_units[0].byte_count,RAW_FILE_MAX);
+    assert_eq!(out.source_units[0].filtered_global,1);
+    assert_eq!(out.peaks.raw_bytes,RAW_FILE_MAX);
+    assert_eq!(out.live_after_teardown,Default::default());
+    assert_eq!(fs::read(t.path.join("in/input.json")).unwrap(),content.as_bytes());
+    println!("R2_G1_RAW_EXACT_BOUND_ACCEPTED_4MIB=true");
+}

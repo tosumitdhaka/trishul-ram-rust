@@ -224,16 +224,19 @@ impl TestHarness {
             peaks: ledger.peaks(),
             error: None,
         };
-        let inner = execute(ExecutionRequest {
-            plan,
-            input: &input,
-            run_dir: &run_dir,
-            paths: &paths,
-            ledger: &ledger,
-            cancelled,
-            fault,
-            root: test_root,
-        }, &mut outcome);
+        let inner = execute(
+            ExecutionRequest {
+                plan,
+                input: &input,
+                run_dir: &run_dir,
+                paths: &paths,
+                ledger: &ledger,
+                cancelled,
+                fault,
+                root: test_root,
+            },
+            &mut outcome,
+        );
         outcome.peaks = ledger.peaks();
         match inner {
             Ok(()) => outcome.status = EphemeralStatus::Completed,
@@ -276,7 +279,16 @@ struct ExecutionRequest<'a> {
     root: &'a Path,
 }
 fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), HarnessError> {
-    let ExecutionRequest { plan, input, run_dir, paths, ledger, cancelled, fault, root } = request;
+    let ExecutionRequest {
+        plan,
+        input,
+        run_dir,
+        paths,
+        ledger,
+        cancelled,
+        fault,
+        root,
+    } = request;
     let mut branches = vec![Vec::<RecordEnvelope>::new(); plan.sinks.len()];
     for name in paths {
         if cancelled.load(Ordering::Acquire) {

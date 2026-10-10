@@ -847,3 +847,170 @@ fn r2_f2_scratch_to_in_role_symlink_swap_is_denied_before_effects() {
     .unwrap();
     assert_eq!(scratch_runs(&root), 0);
 }
+
+#[test]
+fn r2_m1_rotated_scratch_directory_cannot_multiply_process_run_budget() {
+    use std::os::unix::fs::MetadataExt;
+    use std::process::{Command, Stdio};
+    let root = Root::new();
+    root.add("input.json", INPUT);
+    let source = root.path.join("in/input.json");
+    let before = fs::metadata(&source).unwrap();
+    let exe = std::env::current_exe().unwrap();
+    let mut child = Command::new(exe)
+        .arg("--exact")
+        .arg("r2_f1_child_holds_run_lock")
+        .env("TRAM_P1_F1_CHILD_ROOT", root.path.to_str().unwrap())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let first = wait_for_run(&root, Some("a"));
+    fs::rename(root.path.join("scratch"), root.path.join("scratch-old")).unwrap();
+    fs::create_dir(root.path.join("scratch")).unwrap();
+    assert_eq!(
+        TestHarness::start(&root.plan(), &root.path, &AtomicBool::new(false)).unwrap_err(),
+        HarnessError::ResourceExhausted,
+        "a new scratch inode must not admit a second process"
+    );
+    assert_eq!(scratch_runs(&root), 0, "new scratch tree must stay empty");
+    assert!(root.path.join("scratch-old").join(first).exists());
+    let after = fs::metadata(&source).unwrap();
+    assert_eq!(fs::read(&source).unwrap(), INPUT);
+    assert_eq!(
+        (before.ino(), before.mode(), before.len(), before.mtime(), before.mtime_nsec()),
+        (after.ino(), after.mode(), after.len(), after.mtime(), after.mtime_nsec())
+    );
+    child.kill().unwrap();
+    assert!(!child.wait().unwrap().success());
+    fs::remove_dir(root.path.join("scratch")).unwrap();
+    fs::rename(root.path.join("scratch-old"), root.path.join("scratch")).unwrap();
+    let next = TestHarness::start(&root.plan(), &root.path, &AtomicBool::new(false)).unwrap();
+    assert_eq!(next.status, EphemeralStatus::Completed);
+    assert_eq!(next.live_after_teardown, Default::default());
+    assert_eq!(scratch_runs(&root), 2);
+}
+
+#[test]
+fn r2_m2_legacy_capstd_fifo_open_blocks_until_watchdog_kills_child() {
+    use std::process::{Command, Stdio};
+    let root = Root::new();
+    let path = root.path.join("in/old-open.fifo");
+    assert!(Command::new("mkfifo").arg(&path).status().unwrap().success());
+    let exe = std::env::current_exe().unwrap();
+    let mut child = Command::new(exe)
+        .arg("--exact")
+        .arg("r2_m2_child_legacy_capstd_fifo_open")
+        .env("TRAM_P1_M2_LEGACY_FIFO", path.to_str().unwrap())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut blocked = false;
+    while Instant::now() < deadline {
+        if let Some(exit) = child.try_wait().unwrap() {
+            panic!("legacy FIFO open unexpectedly returned: {exit}");
+        }
+        if deadline.saturating_duration_since(Instant::now()) < Duration::from_millis(250) {
+            blocked = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(blocked, "legacy cap-std blocking open was not reproduced");
+}
+
+#[test]
+fn r2_m2_child_legacy_capstd_fifo_open() {
+    let Ok(path) = std::env::var("TRAM_P1_M2_LEGACY_FIFO") else {
+        return;
+    };
+    let path = PathBuf::from(path);
+    let dir = cap_std::fs::Dir::open_ambient_dir(
+        path.parent().unwrap(),
+        cap_std::ambient_authority(),
+    )
+    .unwrap();
+    // This is the exact old input.open(name) primitive. The parent always
+    // watchdog-kills this isolated child; never call it in the runner thread.
+    let _handle = dir.open(path.file_name().unwrap()).unwrap();
+    panic!("legacy FIFO open unexpectedly returned");
+}
+
+#[test]
+fn r2_m2_fifo_swap_is_nonblocking_and_watchdog_protected() {
+    use std::process::{Command, Stdio};
+    let root = Root::new();
+    root.add("input.json", INPUT);
+    let exe = std::env::current_exe().unwrap();
+    let mut child = Command::new(exe)
+        .arg("--exact")
+        .arg("r2_m2_child_swap_fifo_before_source_open")
+        .env("TRAM_P1_M2_ROOT", root.path.to_str().unwrap())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(exit) = child.try_wait().unwrap() {
+            assert!(exit.success(), "FIFO swap child failed: {exit}");
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("FIFO swap blocked worker beyond 5-second watchdog");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), INPUT);
+    assert_eq!(scratch_runs(&root), 1);
+}
+
+#[test]
+fn r2_m2_child_swap_fifo_before_source_open() {
+    use std::os::unix::fs::MetadataExt;
+    use std::process::Command;
+    let Ok(root) = std::env::var("TRAM_P1_M2_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let source = root.join("in/input.json");
+    let original = root.join("in/retained-original");
+    let before = fs::metadata(&source).unwrap();
+    let plan = plan(&root);
+    let runner_root = root.clone();
+    let handle = std::thread::spawn(move || {
+        TestHarness::start_with_fault(
+            &plan,
+            &runner_root,
+            &AtomicBool::new(false),
+            InjectedFault::PauseBeforeSourceOpen,
+        )
+    });
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !tram_engine::harness::source_admission_gate_reached() {
+        assert!(Instant::now() < deadline, "pre-source open gate missing");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    fs::rename(&source, &original).unwrap();
+    assert!(Command::new("mkfifo").arg(&source).status().unwrap().success());
+    let outcome = handle.join().unwrap().unwrap();
+    assert_eq!(outcome.status, EphemeralStatus::Failed);
+    assert_eq!(outcome.error.as_deref(), Some("PathEscape"));
+    assert!(outcome.scratch_paths.is_empty());
+    assert_eq!(outcome.live_after_teardown, Default::default());
+    fs::remove_file(&source).unwrap();
+    fs::rename(&original, &source).unwrap();
+    let after = fs::metadata(&source).unwrap();
+    assert_eq!(
+        (before.ino(), before.mode(), before.len(), before.mtime(), before.mtime_nsec()),
+        (after.ino(), after.mode(), after.len(), after.mtime(), after.mtime_nsec())
+    );
+    assert_eq!(fs::read(&source).unwrap(), INPUT);
+    assert_eq!(fs::read_dir(root.join("scratch")).unwrap().count(), 1);
+}

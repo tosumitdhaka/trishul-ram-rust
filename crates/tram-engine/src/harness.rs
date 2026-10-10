@@ -106,6 +106,12 @@ pub struct RunOutcome {
 /// inspection and released on every return, cancellation, error or unwind.
 static ACTIVE_P1_RUN: RunAtomicBool = RunAtomicBool::new(false);
 static SCRATCH_ADMISSION_GATE: RunAtomicBool = RunAtomicBool::new(false);
+static SOURCE_ADMISSION_GATE: RunAtomicBool = RunAtomicBool::new(false);
+/// Deterministic pre-open synchronization seam for hostile source tests.
+#[must_use]
+pub fn source_admission_gate_reached() -> bool {
+    SOURCE_ADMISSION_GATE.load(Ordering::Acquire)
+}
 /// Diagnostic signal for the bounded within-root scratch-swap regression.
 #[must_use]
 pub fn scratch_admission_gate_reached() -> bool {
@@ -268,6 +274,11 @@ impl TestHarness {
         // opened root via '..' or attacker-swapped directory symlinks.
         let root =
             Dir::open_ambient_dir(test_root, ambient_authority()).map_err(|_| HarnessError::Io)?;
+        // The caller-trusted root is the stable identity, unlike its rotatable
+        // scratch child. This exclusive nonblocking flock is released by RAII
+        // on error/unwind and by the kernel on SIGKILL.
+        rustix::fs::flock(&root, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+            .map_err(|_| HarnessError::ResourceExhausted)?;
         use cap_std::fs::MetadataExt;
         let input_preflight = root
             .symlink_metadata("in")
@@ -295,15 +306,7 @@ impl TestHarness {
             paused?;
         }
         let scratch = open_role_dir(&root, "scratch", &scratch_preflight)?;
-        // Linux advisory flock on the opened scratch *directory descriptor*:
-        // shared-root contenders in other processes cannot have overlapping
-        // live ledgers. The kernel releases it on SIGKILL, preserving P1 crash
-        // semantics and avoiding a stale pathname lock file.
-        rustix::fs::flock(
-            &scratch,
-            rustix::fs::FlockOperation::NonBlockingLockExclusive,
-        )
-        .map_err(|_| HarnessError::ResourceExhausted)?;
+        // Retain the opened root FD and its lock for this entire run.
         // All reservations below follow backing buffer/record lifetime.
         let ledger = BudgetLedger::new(caps);
         let mut paths = Vec::new();
@@ -659,11 +662,32 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             .reserve(Category::RawBuffers, 1)
             .map_err(|_| HarnessError::ResourceExhausted)?;
         if fault == InjectedFault::PauseBeforeSourceOpen {
-            pause_for_adversarial_test(cancelled)?;
+            SOURCE_ADMISSION_GATE.store(true, Ordering::Release);
+            let paused = pause_for_adversarial_test(cancelled);
+            SOURCE_ADMISSION_GATE.store(false, Ordering::Release);
+            paused?;
         }
-        let mut file = input.open(name).map_err(|_| HarnessError::PathEscape)?;
-        let opened = file.metadata().map_err(|_| HarnessError::Io)?;
-        if !opened.is_file() || opened.len() > RAW_FILE_MAX as u64 {
+        // A preflight regular-file name may be swapped to a FIFO, making a
+        // normal blocking open hang before file-type/identity validation.
+        // Open against the trusted input dirfd, without following final links
+        // and without blocking on devices. fstat verifies regular type before
+        // any read or allocation.
+        let fd = rustix::fs::openat(
+            input,
+            name.as_str(),
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::NONBLOCK
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(|_| HarnessError::PathEscape)?;
+        let mut file = std::fs::File::from(fd);
+        let opened = file.metadata().map_err(|_| HarnessError::PathEscape)?;
+        if !opened.is_file() {
+            return Err(HarnessError::PathEscape);
+        }
+        if opened.len() > RAW_FILE_MAX as u64 {
             return Err(HarnessError::ResourceExhausted);
         }
         if !source_link_is_unique(&opened) {

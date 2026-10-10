@@ -248,8 +248,8 @@ impl TestHarness {
     }
 }
 
-fn same_source_identity(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt;
+fn same_source_identity(a: &cap_std::fs::Metadata, b: &cap_std::fs::Metadata) -> bool {
+    use cap_std::fs::MetadataExt;
     a.is_file() && b.is_file() && a.dev() == b.dev() && a.ino() == b.ino()
         && a.len() == b.len() && a.modified().ok() == b.modified().ok()
 }

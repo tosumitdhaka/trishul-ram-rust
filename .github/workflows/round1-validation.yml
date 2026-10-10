@@ -44,6 +44,20 @@ jobs:
       - name: P1 resource, fault and RSS regression evidence
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test r2_resources --locked -- --nocapture
+      - name: R2 G4 exact locked crate archive, notice and RustSec snapshot
+        if: always()
+        shell: bash
+        run: |
+          cargo +1.88.0 fetch --locked --target x86_64-pc-windows-msvc
+          git clone --depth 1 https://github.com/RustSec/advisory-db.git /tmp/tram-p1-rustsec-advisory-db
+          python3 scripts/p1-provenance-audit.py
+      - name: Upload separately reviewable locked dependency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-exact-dependency-evidence
+          path: p1-dependency-evidence.json
+          if-no-files-found: error
       - name: P1 real OS subprocess SIGKILL evidence
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test harness_goldens p1_crash_03_os_kill --locked -- --nocapture

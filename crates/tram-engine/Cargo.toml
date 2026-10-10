@@ -6,5 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+tram-model = { path = "../tram-model" }
+tram-config = { path = "../tram-config" }
+
 [lints]
 workspace = true

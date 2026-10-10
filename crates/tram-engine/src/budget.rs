@@ -323,6 +323,30 @@ mod tests {
         assert_eq!(ledger.current(), Totals::default());
     }
     #[test]
+    fn r2_g1_hierarchical_simultaneous_16mib_decoded_64mib_live_edge() {
+        // Quota-edge proof, not a claim of actual RSS. The in-process
+        // three-file test separately exercises real owned fan-out buffers.
+        let ledger=BudgetLedger::p1();
+        let raw=ledger.reserve_owned(Category::RawBytes,RAW_FILE_MAX).unwrap();
+        let decoder=ledger.reserve_owned(Category::DecodedBytes,DECODED_SOURCE_MAX).unwrap();
+        let a=ledger.reserve_owned(Category::BranchBytes(0),BRANCH_PENDING_MAX).unwrap();
+        let b=ledger.reserve_owned(Category::BranchBytes(1),BRANCH_PENDING_MAX).unwrap();
+        let remainder=LIVE_TOTAL_MAX-RAW_FILE_MAX-DECODED_SOURCE_MAX-2*BRANCH_PENDING_MAX;
+        let remaining=ledger.reserve(Category::LiveBytes,remainder).unwrap();
+        assert_eq!(ledger.current().live_bytes,LIVE_TOTAL_MAX);
+        assert_eq!(ledger.current().decoded_bytes,DECODED_SOURCE_MAX);
+        assert_eq!(ledger.current().branch_bytes,[BRANCH_PENDING_MAX,BRANCH_PENDING_MAX]);
+        assert!(matches!(ledger.reserve(Category::LiveBytes,1),
+            Err(BudgetError::ResourceExhausted)));
+        assert!(matches!(ledger.reserve(Category::DecodedBytes,1),
+            Err(BudgetError::ResourceExhausted)));
+        assert!(matches!(ledger.reserve(Category::BranchBytes(0),1),
+            Err(BudgetError::ResourceExhausted)));
+        drop((raw,decoder,a,b,remaining));
+        assert_eq!(ledger.current(),Totals::default());
+        assert_eq!(ledger.peaks().live_bytes,LIVE_TOTAL_MAX);
+    }
+    #[test]
     fn res_ledger_raii_and_peak_accounting() {
         let ledger = BudgetLedger::p1();
         {

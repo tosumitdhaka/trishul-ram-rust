@@ -2,7 +2,7 @@
 
 Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-ram), targeting equivalent user-facing capabilities through a new execution architecture rather than a mechanical port.
 
-> **Status: Phase 0 / PROPOSED.** Architecture and contracts are under review. There is no running Rust TRAM product in this repository yet. No design is frozen and no implementation is authorized by these documents.
+> **Status (2026-10-10): Phase 0 approved at `2cedaeac5657a8941fe9366f04029cd11b0cfd30`.** Phase 1 Round 1 implementation is authorized on `phase/p1-ephemeral-core` but remains INCOMPLETE/UNVALIDATED. The Rust workspace includes an owned datum/record model and a data-only static plugin registry. Strict YAML plan compilation, a reproducible lockfile and actual Rust toolchain verification are pending. There is no production runtime, source/sink I/O, or durability.
 
 ## Design principles
 

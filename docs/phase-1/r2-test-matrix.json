@@ -1,0 +1,348 @@
+{
+  "schema_version": 1,
+  "request_id": "tram-p1-r2-implementor-remediation-73ee1aab",
+  "architecture_sha": "2cedaeac5657a8941fe9366f04029cd11b0cfd30",
+  "python_pin": "ff380725b86c9569901ea89ad6771623847cc4e2",
+  "scope": "ephemeral-only; no source finalization or persistent receipts",
+  "note": "EXERCISED means a fully-qualified Rust test-executable/module/test identity succeeded in exact-SHA CI; independent SOURCE_REVIEW/EXECUTOR still required. P2_SIMULATED never grants P1 runtime effects.",
+  "cases": [
+    {
+      "id": "COMP-01",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_golden_pinned_compiles_to_exact_p1_plan_without_effects",
+        "harness_goldens::comp_01_golden_real_io_semantic_outputs_and_readonly_source"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-02",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::comp_02_multiple_sources_are_sorted_and_one_file_is_one_unit",
+        "r2_resources::r2_g2_concurrent_final_source_symlink_swap_denies_escape"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-03",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_flat_and_singular_sink_alias",
+        "r2_resources::r2_g2_existing_destination_exclusive_creation_fails_without_overwrite",
+        "r2_resources::r2_f2_scratch_to_in_role_symlink_swap_is_denied_before_effects"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-04",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::codec::tests::comp_04_object_array_empty_and_scalar_rejection"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-05",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::codec::tests::comp_05_encode_ascii_and_semantic_golden",
+        "tram_engine::codec::tests::r2_g1_json_size_preflight_is_exact_for_ascii_and_escaped_unicode"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-06",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::codec::tests::comp_06_u64_bigint_and_unsupported_wire_types"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-07",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::transform::tests::comp_07_11_four_transforms_and_independent_fanout"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-08",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::transform::tests::comp_08_sequential_expression_and_overflow"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-09",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::transform::tests::comp_09_python_boolean_and_comparison_short_circuit"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-10",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::transform::tests::comp_10_drop_rename_missing_and_branch_filter"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-11",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::transform::tests::comp_07_11_four_transforms_and_independent_fanout",
+        "harness_goldens::comp_01_golden_real_io_semantic_outputs_and_readonly_source"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-12",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_rejects_malformed_unknown_or_conflicting_config",
+        "harness_goldens::p1_fanout_04_fail_b_after_a_produces_partial_scratch_without_source_mutation"
+      ],
+      "note": "Other P2 DLQ/retry tiers rejected at plan compile, not runtime simulated"
+    },
+    {
+      "id": "COMP-13",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::r2_g2_concurrent_final_source_symlink_swap_denies_escape",
+        "harness_goldens::comp_01_golden_real_io_semantic_outputs_and_readonly_source"
+      ],
+      "note": "P1 read-only; durable replacement manifest deferred"
+    },
+    {
+      "id": "COMP-14",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::r2_g1_runtime_actual_records_and_zero_leaked_reservations",
+        "r2_resources::r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-15",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_rejects_unsupported_plugin_serializer_transforms_and_expressions"
+      ],
+      "note": "Only negative compiler evidence: no production scheduler or API"
+    },
+    {
+      "id": "COMP-F01",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::comp_f01_malformed_json_run_fails_without_scratch_artifact",
+        "tram_engine::codec::tests::comp_f01_malformed_surrogates_escapes_duplicate_keys_and_depth"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F02",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_rejects_bad_sink_topology_and_unsafe_outputs",
+        "r2_resources::r2_g2_existing_destination_exclusive_creation_fails_without_overwrite"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F03",
+      "status": "EXERCISED",
+      "tests": [
+        "tram_engine::codec::tests::comp_04_object_array_empty_and_scalar_rejection"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F04",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::comp_f04_empty_json_array_produces_explicit_empty_outputs"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F05",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::p1_fanout_04_fail_b_after_a_produces_partial_scratch_without_source_mutation"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F06",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::res_01_oversize_source_rejected_before_scratch_side_effects"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F07",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_environment_resolution_defaults_and_required"
+      ],
+      "note": ""
+    },
+    {
+      "id": "COMP-F08",
+      "status": "EXERCISED",
+      "tests": [
+        "p1_compilation::comp_01_rejects_unsupported_plugin_serializer_transforms_and_expressions"
+      ],
+      "note": ""
+    },
+    {
+      "id": "RES-01",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::res_01_oversize_source_rejected_before_scratch_side_effects"
+      ],
+      "note": ""
+    },
+    {
+      "id": "RES-02",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::res_02_json_depth_and_token_count_fail_closed",
+        "r2_resources::r2_f4_harness_33_depth_and_100001_tokens_fail_preserving_source"
+      ],
+      "note": "Codec-only tests plus executed end-to-end TestHarness failure, source bytes/mode/inode/mtime unchanged and zero scratch artifacts; standalone process RSS/HWM retained in G1."
+    },
+    {
+      "id": "RES-03",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::res_03_4097_decoded_records_and_decoded_allocation_cap",
+        "r2_resources::r2_g1_injected_lower_caps_fail_closed_without_unbounded_output",
+        "r2_resources::r2_f4_harness_4097_records_fail_preserving_source"
+      ],
+      "note": "Codec and ledger boundary plus executed TestHarness 4097 record refusal, zero artifacts and exact source immutability."
+    },
+    {
+      "id": "RES-04",
+      "status": "P2_SIMULATED",
+      "tests": [
+        "tram_engine::obligations::tests::res_04_p2_expansion_64_allowed_65_refused_without_logical_ack"
+      ],
+      "note": "P1 expansion forbidden at compile; 64/65 capacity simulated without emitting child records"
+    },
+    {
+      "id": "RES-05",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::res_05_blocked_sink_can_be_cancelled_without_source_mutation",
+        "r2_resources::r2_g1_injected_lower_caps_fail_closed_without_unbounded_output"
+      ],
+      "note": "Synchronous no-queue scratch harness; bounded cancellation fault, no production async sink"
+    },
+    {
+      "id": "RES-06",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::res_06_branch_clone_stress_and_rss_observations",
+        "r2_resources::r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown"
+      ],
+      "note": ""
+    },
+    {
+      "id": "RES-07",
+      "status": "EXERCISED",
+      "tests": [
+        "enospc::p1_real_enospc_scratch_is_unknown_and_source_immutable",
+        "tram_engine::budget::tests::res_run_cumulative_scratch_refuses_101st_even_with_dropped_io",
+        "r2_resources::res_07_scratch_artifact_and_cumulative_accounting_refuse_over_budget"
+      ],
+      "note": "Actual ENOSPC on 2MiB private tmpfs; the 101st artifact is ledger simulation because fixed plan max 2 outputs"
+    },
+    {
+      "id": "ACK-01",
+      "status": "P2_SIMULATED",
+      "tests": [
+        "tram_engine::obligations::tests::ack_01_seal_two_branches_and_one_filtered",
+        "tram_engine::obligations::tests::ack_01_missing_branch_and_duplicate_insertion_cannot_be_silent"
+      ],
+      "note": ""
+    },
+    {
+      "id": "ACK-02",
+      "status": "P2_SIMULATED",
+      "tests": [
+        "tram_engine::obligations::tests::ack_02_branch_a_confirmed_b_unknown_replay_does_not_ack"
+      ],
+      "note": ""
+    },
+    {
+      "id": "ACK-03",
+      "status": "P2_SIMULATED",
+      "tests": [
+        "tram_engine::obligations::tests::ack_03_empty_and_deliberate_filter_are_not_vacuous_pending"
+      ],
+      "note": ""
+    },
+    {
+      "id": "ACK-04",
+      "status": "P2_SIMULATED",
+      "tests": [
+        "tram_engine::obligations::tests::ack_04_checkpoint_failure_prevents_ack_eligibility"
+      ],
+      "note": ""
+    },
+    {
+      "id": "P1-ADMIT-01",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::p1_admit_01_config_finalization_negative_all_pre_effect",
+        "harness_goldens::p1_admit_01_no_root_escape_or_effect_for_unsafe_paths",
+        "r2_resources::r2_g2_sink_parent_swap_to_external_symlink_refuses_outside_write",
+        "r2_resources::r2_f3_mutated_compiler_plan_rejected_pre_effect"
+      ],
+      "note": ""
+    },
+    {
+      "id": "P1-ACK-02",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::p1_ack_02_cancel_after_partial_scratch_keeps_source_immutable",
+        "r2_resources::r2_g1_fault_during_second_scratch_write_is_uncertain_and_leak_free"
+      ],
+      "note": ""
+    },
+    {
+      "id": "P1-CRASH-03",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::p1_crash_03_os_kill_after_scratch_a_and_independent_new_run"
+      ],
+      "note": ""
+    },
+    {
+      "id": "P1-FANOUT-04",
+      "status": "EXERCISED",
+      "tests": [
+        "harness_goldens::p1_fanout_04_fail_b_after_a_produces_partial_scratch_without_source_mutation"
+      ],
+      "note": ""
+    },
+    {
+      "id": "P1-BOUNDS-05",
+      "status": "EXERCISED",
+      "tests": [
+        "r2_resources::r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown",
+        "enospc::p1_real_enospc_scratch_is_unknown_and_source_immutable",
+        "r2_resources::r2_f1_concurrent_threads_fail_closed_and_guard_releases_on_cancel",
+        "r2_resources::r2_f1_cross_process_scratch_flock_rejects_overlap_and_releases_after_kill"
+      ],
+      "note": ""
+    }
+  ]
+}

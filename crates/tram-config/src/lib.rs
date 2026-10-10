@@ -95,6 +95,18 @@ pub struct Sink {
     pub condition: Option<Expression>,
     pub transforms: Vec<Transform>,
 }
+/// The private compiler authority retains all accepted schema/AST fields.
+/// Public plan mutation invalidates admission even when a caller clones a plan.
+#[derive(Debug, Clone, PartialEq)]
+struct PlanSnapshot {
+    contract_version: u32,
+    ephemeral_only: bool,
+    name: String,
+    description: Option<String>,
+    source: Source,
+    transforms: Vec<Transform>,
+    sinks: Vec<Sink>,
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValidatedPlan {
     pub contract_version: u32,
@@ -104,6 +116,25 @@ pub struct ValidatedPlan {
     pub source: Source,
     pub transforms: Vec<Transform>,
     pub sinks: Vec<Sink>,
+    seal: Option<Box<PlanSnapshot>>,
+}
+impl ValidatedPlan {
+    fn snapshot(&self) -> PlanSnapshot {
+        PlanSnapshot {
+            contract_version: self.contract_version,
+            ephemeral_only: self.ephemeral_only,
+            name: self.name.clone(),
+            description: self.description.clone(),
+            source: self.source.clone(),
+            transforms: self.transforms.clone(),
+            sinks: self.sinks.clone(),
+        }
+    }
+    /// Only the strict compiler mints the private snapshot.
+    #[must_use]
+    pub fn is_compiler_minted(&self) -> bool {
+        self.seal.as_deref() == Some(&self.snapshot())
+    }
 }
 
 /// Explicit environment, not ambient process environment. Substitution happens
@@ -796,7 +827,7 @@ pub fn compile_p1(
     } else {
         sinks(required(m, "sinks")?, true, registry)?
     };
-    Ok(ValidatedPlan {
+    let mut plan = ValidatedPlan {
         contract_version: PLAN_VERSION,
         ephemeral_only: true,
         name: name.into(),
@@ -807,7 +838,10 @@ pub fn compile_p1(
         },
         transforms: global,
         sinks: destinations,
-    })
+        seal: None,
+    };
+    plan.seal = Some(Box::new(plan.snapshot()));
+    Ok(plan)
 }
 pub fn compile_p1_builtin(
     yaml: &str,

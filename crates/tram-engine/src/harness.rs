@@ -194,7 +194,8 @@ impl TestHarness {
         fault: InjectedFault,
     ) -> Result<RunOutcome, HarnessError> {
         let _active_run = ActiveP1Run::acquire()?;
-        if !plan.ephemeral_only
+        if !plan.is_compiler_minted()
+            || !plan.ephemeral_only
             || plan.contract_version != 1
             || plan.sinks.is_empty()
             || plan.sinks.len() > 2

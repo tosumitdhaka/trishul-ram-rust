@@ -634,3 +634,37 @@ fn r2_g1_exact_four_mib_input_is_admissible_without_fifth_byte() {
     );
     println!("R2_G1_RAW_EXACT_BOUND_ACCEPTED_4MIB=true");
 }
+
+#[test]
+fn r2_f3_mutated_compiler_plan_rejected_pre_effect() {
+    use tram_config::{Expression, Transform};
+    let root = Root::new();
+    root.add("input.json", INPUT);
+    let mut forged = root.plan();
+    assert!(forged.is_compiler_minted());
+    forged.transforms.push(Transform::AddField(vec![(
+        "nested.path".into(), Expression::Literal(Datum::Signed(1)),
+    )]));
+    assert!(!forged.is_compiler_minted());
+    assert_eq!(
+        TestHarness::start(&forged, &root.path.join("nonexistent"), &AtomicBool::new(false))
+            .unwrap_err(), HarnessError::UnsafePlan
+    );
+    assert_eq!(
+        TestHarness::start(&forged, &root.path, &AtomicBool::new(false)).unwrap_err(),
+        HarnessError::UnsafePlan
+    );
+    assert_eq!(scratch_runs(&root), 0);
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(), INPUT);
+}
+#[test]
+fn r2_f3_unmodified_compiler_plan_and_clone_remain_admitted() {
+    let root = Root::new();
+    root.add("input.json", INPUT);
+    let plan = root.plan();
+    assert!(plan.is_compiler_minted());
+    assert!(plan.clone().is_compiler_minted());
+    let outcome = TestHarness::start(&plan, &root.path, &AtomicBool::new(false)).unwrap();
+    assert_eq!(outcome.status, EphemeralStatus::Completed);
+    assert_eq!(outcome.live_after_teardown, Default::default());
+}

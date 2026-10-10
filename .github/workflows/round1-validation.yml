@@ -44,7 +44,7 @@ jobs:
         run: |
           cargo +1.88.0 fmt --all || true
           cargo +1.88.0 generate-lockfile
-          for f in Cargo.lock crates/tram-engine/src/budget.rs crates/tram-engine/src/transform.rs crates/tram-engine/src/codec.rs; do
+          for f in Cargo.lock crates/tram-engine/src/budget.rs crates/tram-engine/src/transform.rs crates/tram-engine/src/codec.rs crates/tram-engine/src/obligations.rs; do
             echo "TRAM_R2_ARTIFACT_BEGIN:$f"
             base64 -w0 "$f"
             echo

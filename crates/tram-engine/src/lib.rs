@@ -5,3 +5,4 @@ pub mod budget;
 pub mod codec;
 pub mod transform;
 pub mod obligations;
+pub mod harness;

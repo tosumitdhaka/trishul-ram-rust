@@ -9,6 +9,8 @@ license.workspace = true
 [dependencies]
 tram-model = { path = "../tram-model" }
 tram-config = { path = "../tram-config" }
+cap-std = "=3.4.5"
+sha2 = "=0.10.9"
 
 [lints]
 workspace = true

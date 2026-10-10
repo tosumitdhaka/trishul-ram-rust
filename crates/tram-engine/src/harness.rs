@@ -224,17 +224,16 @@ impl TestHarness {
             peaks: ledger.peaks(),
             error: None,
         };
-        let inner = execute(
+        let inner = execute(ExecutionRequest {
             plan,
-            &input,
-            &run_dir,
-            &paths,
-            &ledger,
+            input: &input,
+            run_dir: &run_dir,
+            paths: &paths,
+            ledger: &ledger,
             cancelled,
             fault,
-            &mut outcome,
-            test_root,
-        );
+            root: test_root,
+        }, &mut outcome);
         outcome.peaks = ledger.peaks();
         match inner {
             Ok(()) => outcome.status = EphemeralStatus::Completed,
@@ -266,17 +265,18 @@ fn new_run_id(scratch: &Dir) -> Result<String, HarnessError> {
     }
     Err(HarnessError::ResourceExhausted)
 }
-fn execute(
-    plan: &ValidatedPlan,
-    input: &Dir,
-    run_dir: &Dir,
-    paths: &[String],
-    ledger: &BudgetLedger,
-    cancelled: &AtomicBool,
+struct ExecutionRequest<'a> {
+    plan: &'a ValidatedPlan,
+    input: &'a Dir,
+    run_dir: &'a Dir,
+    paths: &'a [String],
+    ledger: &'a BudgetLedger,
+    cancelled: &'a AtomicBool,
     fault: InjectedFault,
-    out: &mut RunOutcome,
-    root: &Path,
-) -> Result<(), HarnessError> {
+    root: &'a Path,
+}
+fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), HarnessError> {
+    let ExecutionRequest { plan, input, run_dir, paths, ledger, cancelled, fault, root } = request;
     let mut branches = vec![Vec::<RecordEnvelope>::new(); plan.sinks.len()];
     for name in paths {
         if cancelled.load(Ordering::Acquire) {

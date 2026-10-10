@@ -58,6 +58,9 @@ jobs:
           name: p1-exact-dependency-evidence
           path: p1-dependency-evidence.json
           if-no-files-found: error
+      - name: P1 real isolated tmpfs disk-full ENOSPC=28 evidence
+        if: always()
+        run: bash scripts/p1-enospc.sh
       - name: P1 real OS subprocess SIGKILL evidence
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test harness_goldens p1_crash_03_os_kill --locked -- --nocapture

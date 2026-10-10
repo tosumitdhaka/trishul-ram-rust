@@ -335,7 +335,7 @@ mod tests {
         assert_eq!(decode(&vec![b' ';RAW_FILE_MAX+1]),Err(JsonError::ResourceExhausted));
         let too_many=format!("[{}]",std::iter::repeat_n("{}",RECORDS_PER_SOURCE_MAX+1).collect::<Vec<_>>().join(","));
         assert_eq!(decode(too_many.as_bytes()),Err(JsonError::ResourceExhausted));
-        let large=row(BTreeMap::from([("x".into(),Datum::String("a".repeat(ENCODED_RECORD_MAX))]));
+        let large=row(BTreeMap::from([("x".into(),Datum::String("a".repeat(ENCODED_RECORD_MAX)))]));
         assert_eq!(encode_array(&[large]),Err(JsonError::ResourceExhausted));
     }
 }

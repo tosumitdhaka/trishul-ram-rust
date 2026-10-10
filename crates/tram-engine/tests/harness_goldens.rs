@@ -13,7 +13,9 @@ use tram_config::compile_p1_builtin;
 use tram_engine::{
     budget::RAW_FILE_MAX,
     codec,
-    harness::{BranchStatus, EphemeralStatus, HarnessError, InjectedFault, SourceDisposition, TestHarness},
+    harness::{
+        BranchStatus, EphemeralStatus, HarnessError, InjectedFault, SourceDisposition, TestHarness,
+    },
 };
 const YAML: &str = include_str!("../../../docs/phase-0/fixtures/p1/pipeline.yaml");
 const INPUT: &[u8] = include_bytes!("../../../docs/phase-0/fixtures/p1/input.json");
@@ -90,7 +92,10 @@ fn comp_01_golden_real_io_semantic_outputs_and_readonly_source() {
     assert_eq!(out.source_units.len(), 1);
     assert_eq!(out.source_units[0].record_count, 2);
     assert_eq!(out.source_units[0].filtered_global, 1);
-    assert_eq!(out.source_units[0].disposition,SourceDisposition::HasRecords);
+    assert_eq!(
+        out.source_units[0].disposition,
+        SourceDisposition::HasRecords
+    );
     assert!(!out.source_units[0].run_failed);
     assert_eq!(inspect(&out, 0), codec::decode(EXPECTED_A).unwrap());
     assert_eq!(inspect(&out, 1), codec::decode(EXPECTED_B).unwrap());
@@ -211,7 +216,7 @@ fn comp_f04_empty_json_array_produces_explicit_empty_outputs() {
     let out = TestHarness::start(&t.plan(), &t.root, &cancel).unwrap();
     assert_eq!(out.status, EphemeralStatus::Completed);
     assert_eq!(out.source_units[0].record_count, 0);
-    assert_eq!(out.source_units[0].disposition,SourceDisposition::Empty);
+    assert_eq!(out.source_units[0].disposition, SourceDisposition::Empty);
     assert_eq!(inspect(&out, 0), codec::decode(b"[]").unwrap());
     assert_eq!(inspect(&out, 1), codec::decode(b"[]").unwrap());
 }
@@ -227,8 +232,8 @@ fn comp_f01_malformed_json_run_fails_without_scratch_artifact() {
         vec![BranchStatus::NotStarted, BranchStatus::NotStarted]
     );
     assert!(out.scratch_paths.is_empty());
-    assert_eq!(out.source_units.len(),1);
-    assert_eq!(out.source_units[0].disposition,SourceDisposition::Failed);
+    assert_eq!(out.source_units.len(), 1);
+    assert_eq!(out.source_units[0].disposition, SourceDisposition::Failed);
     assert!(out.source_units[0].run_failed);
     assert_eq!(fs::read(t.root.join("in/bad.json")).unwrap(), b"[{},12]");
 }

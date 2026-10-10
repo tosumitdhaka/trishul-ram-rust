@@ -73,7 +73,11 @@ pub enum InjectedFault {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SourceDisposition {
-    Pending, HasRecords, Empty, FilteredGlobal, Failed,
+    Pending,
+    HasRecords,
+    Empty,
+    FilteredGlobal,
+    Failed,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceEvidence {
@@ -535,7 +539,7 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         }
         let hash = Sha256::digest(&bytes);
         let digest = format!("{hash:x}");
-        let unit_index=out.source_units.len();
+        let unit_index = out.source_units.len();
         out.source_units.push(SourceEvidence {
             relative_name: name.clone(),
             sha256: digest.clone(),
@@ -560,7 +564,7 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
             .map_err(|_| HarnessError::ResourceExhausted)?;
         let unit_id = SourceUnitId::new(format!("{name}:{digest}"))
             .map_err(|_| HarnessError::InvalidSource)?;
-        out.source_units[unit_index].record_count=rows.len();
+        out.source_units[unit_index].record_count = rows.len();
         for (ordinal, data) in rows.into_iter().enumerate() {
             if cancelled.load(Ordering::Acquire) {
                 return Err(HarnessError::UnsafePlan);
@@ -632,10 +636,14 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
                 branches[slot].push(branch);
             }
         }
-        let unit=&mut out.source_units[unit_index];
-        unit.disposition=if unit.record_count==0 { SourceDisposition::Empty }
-            else if unit.filtered_global==unit.record_count { SourceDisposition::FilteredGlobal }
-            else { SourceDisposition::HasRecords };
+        let unit = &mut out.source_units[unit_index];
+        unit.disposition = if unit.record_count == 0 {
+            SourceDisposition::Empty
+        } else if unit.filtered_global == unit.record_count {
+            SourceDisposition::FilteredGlobal
+        } else {
+            SourceDisposition::HasRecords
+        };
     }
     if cancelled.load(Ordering::Acquire) {
         return Err(HarnessError::UnsafePlan);

@@ -4,7 +4,7 @@
   "architecture_sha": "2cedaeac5657a8941fe9366f04029cd11b0cfd30",
   "python_pin": "ff380725b86c9569901ea89ad6771623847cc4e2",
   "scope": "ephemeral-only; no source finalization or persistent receipts",
-  "note": "EXERCISED indicates test code exists and is invoked by exact-SHA CI; independent reviewer/EXECUTOR still decides conformance. P2_SIMULATED is never P1 runtime permission.",
+  "note": "EXERCISED requires observed successful execution with enabled test names in exact-SHA GitHub Actions workspace logs. Pure codec cases are also cross-mapped to the distinct end-to-end harness tests; P2_SIMULATED is not real P1 authorization.",
   "cases": [
     {
       "id": "COMP-01",
@@ -29,7 +29,8 @@
       "status": "EXERCISED",
       "tests": [
         "comp_01_flat_and_singular_sink_alias",
-        "r2_g2_existing_destination_exclusive_creation_fails_without_overwrite"
+        "r2_g2_existing_destination_exclusive_creation_fails_without_overwrite",
+        "r2_f2_scratch_to_in_role_symlink_swap_is_denied_before_effects"
       ],
       "note": ""
     },
@@ -212,18 +213,20 @@
       "id": "RES-02",
       "status": "EXERCISED",
       "tests": [
-        "res_02_json_depth_and_token_count_fail_closed"
+        "res_02_json_depth_and_token_count_fail_closed",
+        "r2_f4_harness_33_depth_and_100001_tokens_fail_preserving_source"
       ],
-      "note": ""
+      "note": "Codec-only tests plus executed end-to-end TestHarness failure, source bytes/mode/inode/mtime unchanged and zero scratch artifacts; standalone process RSS/HWM retained in G1."
     },
     {
       "id": "RES-03",
       "status": "EXERCISED",
       "tests": [
         "res_03_4097_decoded_records_and_decoded_allocation_cap",
-        "r2_g1_injected_lower_caps_fail_closed_without_unbounded_output"
+        "r2_g1_injected_lower_caps_fail_closed_without_unbounded_output",
+        "r2_f4_harness_4097_records_fail_preserving_source"
       ],
-      "note": ""
+      "note": "Codec and ledger boundary plus executed TestHarness 4097 record refusal, zero artifacts and exact source immutability."
     },
     {
       "id": "RES-04",
@@ -300,7 +303,8 @@
       "tests": [
         "p1_admit_01_config_finalization_negative_all_pre_effect",
         "p1_admit_01_no_root_escape_or_effect_for_unsafe_paths",
-        "r2_g2_sink_parent_swap_to_external_symlink_refuses_outside_write"
+        "r2_g2_sink_parent_swap_to_external_symlink_refuses_outside_write",
+        "r2_f3_mutated_compiler_plan_rejected_pre_effect"
       ],
       "note": ""
     },
@@ -334,7 +338,9 @@
       "status": "EXERCISED",
       "tests": [
         "r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown",
-        "p1_real_enospc_scratch_is_unknown_and_source_immutable"
+        "p1_real_enospc_scratch_is_unknown_and_source_immutable",
+        "r2_f1_concurrent_threads_fail_closed_and_guard_releases_on_cancel",
+        "r2_f1_cross_process_scratch_flock_rejects_overlap_and_releases_after_kill"
       ],
       "note": ""
     }

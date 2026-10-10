@@ -105,6 +105,12 @@ pub struct RunOutcome {
 /// One admitted P1 run per process. The guard is acquired before filesystem
 /// inspection and released on every return, cancellation, error or unwind.
 static ACTIVE_P1_RUN: RunAtomicBool = RunAtomicBool::new(false);
+static SCRATCH_ADMISSION_GATE: RunAtomicBool = RunAtomicBool::new(false);
+/// Diagnostic signal for the bounded within-root scratch-swap regression.
+#[must_use]
+pub fn scratch_admission_gate_reached() -> bool {
+    SCRATCH_ADMISSION_GATE.load(Ordering::Acquire)
+}
 struct ActiveP1Run;
 impl ActiveP1Run {
     fn acquire() -> Result<Self, HarnessError> {
@@ -273,7 +279,10 @@ impl TestHarness {
         // Gate solely for deterministic sandbox-race regressions; no effects
         // have occurred and neither a source read nor scratch create is allowed.
         if fault == InjectedFault::PauseBeforeScratchOpen {
-            pause_for_adversarial_test(cancelled)?;
+            SCRATCH_ADMISSION_GATE.store(true, Ordering::Release);
+            let paused = pause_for_adversarial_test(cancelled);
+            SCRATCH_ADMISSION_GATE.store(false, Ordering::Release);
+            paused?;
         }
         let scratch = open_role_dir(&root, "scratch", &scratch_preflight)?;
         // Linux advisory flock on the opened scratch *directory descriptor*:
@@ -699,7 +708,10 @@ fn execute(request: ExecutionRequest<'_>, out: &mut RunOutcome) -> Result<(), Ha
         let _record_count = ledger
             .reserve(Category::Records, reserved_records)
             .map_err(|_| HarnessError::ResourceExhausted)?;
-        let rows = codec::decode(&bytes).map_err(|_| HarnessError::MalformedSource)?;
+        let rows = codec::decode(&bytes).map_err(|error| match error {
+            codec::JsonError::ResourceExhausted => HarnessError::ResourceExhausted,
+            _ => HarnessError::MalformedSource,
+        })?;
         if rows.len() != reserved_records || rows.len() > RECORDS_PER_SOURCE_MAX {
             return Err(HarnessError::ResourceExhausted);
         }

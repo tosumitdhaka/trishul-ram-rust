@@ -668,3 +668,128 @@ fn r2_f3_unmodified_compiler_plan_and_clone_remain_admitted() {
     assert_eq!(outcome.status, EphemeralStatus::Completed);
     assert_eq!(outcome.live_after_teardown, Default::default());
 }
+
+fn r2_f4_assert_bad_source_fails_without_effects(bytes: &[u8]) {
+    use std::os::unix::fs::MetadataExt;
+    use sha2::{Digest, Sha256};
+    let root = Root::new();
+    root.add("input.json", bytes);
+    let source = root.path.join("in/input.json");
+    let before = fs::metadata(&source).unwrap();
+    let hash_before = format!("{:x}", Sha256::digest(fs::read(&source).unwrap()));
+    let outcome = TestHarness::start(&root.plan(), &root.path, &AtomicBool::new(false))
+        .expect("failure after read must return an ephemeral outcome");
+    assert_eq!(outcome.status, EphemeralStatus::Failed);
+    assert!(outcome.error.as_deref() == Some("ResourceExhausted"), "{:?}",outcome.error);
+    assert_eq!(outcome.source_units.len(),1);
+    assert_eq!(outcome.source_units[0].disposition, tram_engine::harness::SourceDisposition::Failed);
+    assert!(outcome.source_units[0].run_failed);
+    assert_eq!(outcome.live_after_teardown, Default::default());
+    assert!(outcome.scratch_paths.is_empty(), "no scratch artifacts");
+    let run_dir = root.path.join("scratch").join(&outcome.run_id);
+    assert_eq!(fs::read_dir(run_dir).unwrap().count(),0);
+    let after = fs::metadata(&source).unwrap();
+    assert_eq!(after.ino(), before.ino());
+    assert_eq!(after.mode(), before.mode());
+    assert_eq!(after.len(), before.len());
+    assert_eq!(after.modified().unwrap(), before.modified().unwrap());
+    assert_eq!(format!("{:x}", Sha256::digest(fs::read(&source).unwrap())), hash_before);
+}
+#[test]
+fn r2_f4_harness_33_depth_and_100001_tokens_fail_preserving_source() {
+    let deep=format!("{{\"a\":{}}}", "[".repeat(33)+"0"+&"]".repeat(33));
+    r2_f4_assert_bad_source_fails_without_effects(deep.as_bytes());
+    let many=format!("{{\"a\":[{}]}}",std::iter::repeat_n("0",100_001).collect::<Vec<_>>().join(","));
+    r2_f4_assert_bad_source_fails_without_effects(many.as_bytes());
+}
+#[test]
+fn r2_f4_harness_4097_records_fail_preserving_source() {
+    let records=format!("[{}]",std::iter::repeat_n("{}",4097).collect::<Vec<_>>().join(","));
+    r2_f4_assert_bad_source_fails_without_effects(records.as_bytes());
+}
+#[test]
+fn r2_f1_concurrent_threads_fail_closed_and_guard_releases_on_cancel() {
+    let root = Root::new();
+    root.add("input.json",INPUT);
+    let flag=Arc::new(AtomicBool::new(false));
+    let cancel=Arc::clone(&flag);
+    let first_plan=root.plan();
+    let path=root.path.clone();
+    let thread=std::thread::spawn(move|| {
+        TestHarness::start_with_fault(&first_plan,&path,&cancel,InjectedFault::PauseAfterFirstWrite)
+    });
+    let _first=wait_for_run(&root,Some("a"));
+    let second=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false));
+    assert_eq!(second.unwrap_err(),HarnessError::ResourceExhausted);
+    assert_eq!(scratch_runs(&root),1);
+    flag.store(true,Ordering::Release);
+    let finished=thread.join().unwrap().unwrap();
+    assert_eq!(finished.status,EphemeralStatus::Cancelled);
+    assert_eq!(finished.live_after_teardown,Default::default());
+    let fresh=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap();
+    assert_eq!(fresh.status,EphemeralStatus::Completed);
+    assert_eq!(scratch_runs(&root),2);
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(),INPUT);
+}
+#[test]
+fn r2_f1_cross_process_scratch_flock_rejects_overlap_and_releases_after_kill() {
+    use std::process::{Command,Stdio};
+    let root = Root::new();
+    root.add("input.json",INPUT);
+    let exe=std::env::current_exe().unwrap();
+    let mut child=Command::new(exe)
+        .arg("--exact").arg("r2_f1_child_holds_run_lock")
+        .env("TRAM_P1_F1_CHILD_ROOT",root.path.to_str().unwrap())
+        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let _first=wait_for_run(&root,Some("a"));
+    assert_eq!(
+        TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap_err(),
+        HarnessError::ResourceExhausted
+    );
+    child.kill().unwrap();
+    assert!(!child.wait().unwrap().success());
+    let next=TestHarness::start(&root.plan(),&root.path,&AtomicBool::new(false)).unwrap();
+    assert_eq!(next.status,EphemeralStatus::Completed);
+    assert_eq!(next.live_after_teardown,Default::default());
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(),INPUT);
+}
+#[test]
+fn r2_f1_child_holds_run_lock() {
+    let Ok(root)=std::env::var("TRAM_P1_F1_CHILD_ROOT") else {return;};
+    let root=PathBuf::from(root);
+    let result=TestHarness::start_with_fault(
+        &plan(&root),&root,&AtomicBool::new(false),InjectedFault::PauseAfterFirstWrite,
+    );
+    panic!("cross-process admission child unexpectedly returned: {result:?}");
+}
+#[test]
+fn r2_f2_scratch_to_in_role_symlink_swap_is_denied_before_effects() {
+    use std::os::unix::fs::{symlink,MetadataExt};
+    let root=Root::new();
+    root.add("input.json",INPUT);
+    let before=fs::metadata(root.path.join("in/input.json")).unwrap();
+    let p=root.plan();
+    let path=root.path.clone();
+    let thread=std::thread::spawn(move|| {
+        TestHarness::start_with_fault(
+            &p,&path,&AtomicBool::new(false),InjectedFault::PauseBeforeScratchOpen
+        )
+    });
+    let deadline=Instant::now()+Duration::from_secs(5);
+    while !tram_engine::harness::scratch_admission_gate_reached() {
+        assert!(Instant::now()<deadline,"scratch swap gate never reached");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    fs::rename(root.path.join("scratch"),root.path.join("scratch-original")).unwrap();
+    symlink("in",root.path.join("scratch")).unwrap();
+    assert_eq!(thread.join().unwrap().unwrap_err(),HarnessError::PathEscape);
+    assert_eq!(fs::read_dir(root.path.join("in")).unwrap().count(),1);
+    assert_eq!(fs::read(root.path.join("in/input.json")).unwrap(),INPUT);
+    let after=fs::metadata(root.path.join("in/input.json")).unwrap();
+    assert_eq!(before.mode(),after.mode());
+    assert_eq!(before.modified().unwrap(),after.modified().unwrap());
+    assert_eq!(before.ino(),after.ino());
+    fs::remove_file(root.path.join("scratch")).unwrap();
+    fs::rename(root.path.join("scratch-original"),root.path.join("scratch")).unwrap();
+    assert_eq!(scratch_runs(&root),0);
+}

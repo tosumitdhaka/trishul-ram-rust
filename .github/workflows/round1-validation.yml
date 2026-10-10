@@ -36,7 +36,10 @@ jobs:
         run: cargo +1.88.0 clippy --workspace --all-targets --locked -- -D warnings
       - name: Workspace tests
         if: always()
-        run: cargo +1.88.0 test --workspace --locked
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo +1.88.0 test --workspace --locked -- --nocapture 2>&1 | tee /tmp/p1-workspace-results.log
       - name: Focused P1 config tests
         if: always()
         run: cargo +1.88.0 test -p tram-config --locked
@@ -47,9 +50,6 @@ jobs:
       - name: P1 resource, fault and RSS regression evidence
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test r2_resources --locked -- --nocapture
-      - name: Validate machine-checkable frozen P1 acceptance matrix
-        if: always()
-        run: python3 scripts/p1-check-matrix.py
       - name: R2 G1 standalone worst-case sampled process RSS HWM
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test r2_resources r2_g1_simultaneous_multifile_branch_rss_peak_and_zero_teardown --locked -- --exact --nocapture
@@ -69,7 +69,10 @@ jobs:
           if-no-files-found: error
       - name: P1 real isolated tmpfs disk-full ENOSPC=28 evidence
         if: always()
-        run: bash scripts/p1-enospc.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/p1-enospc.sh 2>&1 | tee /tmp/p1-enospc-results.log
       - name: P1 real OS subprocess SIGKILL evidence
         if: always()
         run: cargo +1.88.0 test -p tram-engine --test harness_goldens p1_crash_03_os_kill --locked -- --nocapture
@@ -100,3 +103,9 @@ jobs:
         run: |
           /tmp/tram-python-oracle-venv/bin/python -m pip freeze
           /tmp/tram-python-oracle-venv/bin/python scripts/p1-python-oracle.py
+      - name: Verify frozen acceptance matrix against executed test evidence
+        if: always()
+        shell: bash
+        run: |
+          cat /tmp/p1-workspace-results.log /tmp/p1-enospc-results.log > /tmp/p1-combined-results.log
+          python3 scripts/p1-check-matrix.py --executed-log /tmp/p1-combined-results.log

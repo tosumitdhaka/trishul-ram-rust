@@ -1,6 +1,6 @@
 # TRAM Rust — proposed plugin, record and configuration contracts
 
-**Status:** PROPOSED; interfaces below express required semantics, not compilable production Rust trait definitions.
+**Status:** Historical Phase 0 proposed wording, frozen at approved `2cedaeac5657a8941fe9366f04029cd11b0cfd30`. The optional post-P1 corrections in this draft amendment remain **unapproved**; interfaces below are conceptual, not production trait implementations.
 
 ## P1 scope clarification
 
@@ -57,24 +57,7 @@ Record identity and source checkpoint are distinct. A batch can share source pos
 
 ## 3. Plan and config validation
 
-Plan structure (illustrative only, to be matched against Python YAML contracts in migration tests):
-
-```yaml
-source:
-  type: local
-  path: /data/incoming/*.json
-serializer_in:
-  type: json
-transforms:
-  - type: rename
-    fields: {raw_id: cell_id}
-sinks:
-  - type: local
-    path: /data/outgoing
-    serializer: json
-schedule:
-  type: manual
-```
+**Canonical P1 config:** use the [exact pinned P1 YAML fixture](fixtures/p1/pipeline.yaml) and the [P1 compatibility matrix](p1-compatibility-matrix.md), not a schematic snippet with unsupported keys or arbitrary external paths. The sample previously shown here mixed conceptual/unsupported keys and could be mistaken for a valid P1 plan. Future production plugin YAML examples require their own accepted versioned schema and capability gate.
 
 - Existing Python YAML should be accepted for *supported semantics*, with a declared compatibility subset. Do not claim universal config parity in Phase 1.
 - Unknown plugin, misspelled option, unsupported operation, ambiguous schema, invalid env reference and unavailable secret fail **before opening a source**. New engine-specific config changes must be versioned with migration guidance.
@@ -110,7 +93,7 @@ Terms are provisional and need precise codec-specific interpretations. The plann
 The P1 local sink is **scratch-only** and cannot implement `fsynced_local`/durable confirmation; the P2 local sink adds idempotent persistent staging+publication+fsync and source checkpoint barrier after architecture-specific tests. The P1 parser must reject unsupported Python options before any I/O, not silently accept default production sink settings.
 
 **First vertical slice (engine proof, not feature-complete product):**
-- Local file source and local file sink, with staged finalization behavior.
+- **P1:** read-only local file source and exclusive **scratch-only** local sink, with no durable publication, acknowledgement or destructive source finalization. **P2 only after a separate durability gate:** idempotent staging/publish/fsync and guarded source finalization.
 - JSON serializer (including NDJSON as separate framing capability only if proven).
 - Stateless `rename`, `add_field`, `filter`, `drop` transforms.
 - One multi-sink route and one explicit invalid-config/record failure path.
@@ -128,3 +111,5 @@ The P1 local sink is **scratch-only** and cannot implement `fsynced_local`/durab
 - Include plan compile tests, plugin config schema tests, descriptor honesty assertions, cross-version schema compatibility tests and negative capability cases.
 - Every plugin release adds golden input/output fixtures, failure/recovery cases, overload/cancellation evidence and performance where relevant.
 - A plugin cannot be considered supported until its manifest, docs and executed tests agree.
+
+**Post-P1 proposals (not approved):** [runtime/dataflow](proposals/adr-013-p2-runtime-concurrency.md), [standalone failure domain](proposals/adr-014-standalone-worker-failure-domain.md), [uncertain attempts](proposals/adr-015-unknown-recovery-operations.md), [JSON/SNMP/source compatibility](proposals/adr-016-serialization-sources-persistence-gates.md). Existing P1 fixture and validation semantics are not changed by this editorial clarification.

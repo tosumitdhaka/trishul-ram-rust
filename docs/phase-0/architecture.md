@@ -1,6 +1,6 @@
 # TRAM Rust — proposed system architecture
 
-**Status:** PROPOSED / Phase 0 / requires independent design review; not frozen.
+**Status:** Historical Phase 0 proposal text, independently approved at immutable `2cedaeac5657a8941fe9366f04029cd11b0cfd30` (Orchestrator [decision](https://github.com/tosumitdhaka/trishul-ram-rust/pull/1#issuecomment-6089485009)). The post-P1 proposals referenced below are **not frozen or approved**.
 **Reference pins for this assessment:** Python `tosumitdhaka/trishul-ram@ff380725b86c9569901ea89ad6771623847cc4e2` (documentation-only successor to released v1.8.0); Rust SNMP `tosumitdhaka/trishul-snmp-rust@bef2b7643dddd4c28326febe9e310575110b6f4b` (`trishul-snmp` 0.1.1). Revalidate live heads before subsequent gates.
 
 ## Normative phase boundary and review precedence
@@ -139,3 +139,14 @@ The blocking review (P0-R1..R6) is addressed by the [finding map](review-remedia
 Design approval requires review of: shared-topology invariants; execution lifecycle; ack/commit contract; journal/fencing/crash recovery; plugin capabilities; source/record/serializer compatibility; auth; bounded memory and overload behavior; native SNMP role; deployment upgrade/rollback. No crate implementation is authorized merely because this proposal was committed.
 
 Open issues and gate plan: [migration-plan.md](migration-plan.md). Detailed interfaces: [plugin-contracts.md](plugin-contracts.md), [reliability-contracts.md](reliability-contracts.md).
+
+## 8. Post-P1 amendment proposals (not part of the accepted Phase 0 freeze)
+
+The following **proposed** post-freeze amendments require independent DCR/ADR review and an explicit new Orchestrator approval before taking precedence over D01–D12 or authorizing P2 runtime work:
+
+- [ADR-013: runtime/concurrency](proposals/adr-013-p2-runtime-concurrency.md) — candidate Tokio execution, bounded channels/permits, isolated blocking I/O and cancellation/quiescence proof. P1's single-thread/serialized test profile cannot prove P2 simultaneous sink I/O.
+- [ADR-014: standalone worker failure domain](proposals/adr-014-standalone-worker-failure-domain.md) — in-process vs supervised local process, manager survival on native plugin fatal failure and same `ExecutionService` semantics.
+- [ADR-015: UNKNOWN operations](proposals/adr-015-unknown-recovery-operations.md) — reconciliation, quarantine and audited unresolved evidence loss without a fake terminal success or unsafe guard release.
+- [ADR-016: data/source/backend/performance re-entry](proposals/adr-016-serialization-sources-persistence-gates.md) — reconcile D03 P5 JSON mapping with D07 P3 SNMP requirement; decide P2 fractional JSON scope, old-revision EffectId replay, non-file source models, SQLite/P4 PostgreSQL rationale, and early matched-guarantee performance evidence.
+
+[Review package / Orchestrator handoff](proposals/p2-readiness-handoff.md). The frozen P1 fixture, safety caps, source-unit obligation predicate, journal/CAS fencing, ambiguity semantics and D01 shared-engine invariant remain unchanged. **No P2 implementation authorization or Phase 1 R2 acceptance is claimed by this proposed documentation delta.**

@@ -1,6 +1,6 @@
 # P0-R6 — Architecture decision register (D01–D12)
 
-**Status:** DESIGN_OWNER remediation proposal. **These are explicit disposition recommendations for Phase 0 review, not independently approved ADRs.** `ACCEPT` means “include this normatively in the architecture candidate”; `DEFER` means “bounded later-phase detail with a named re-entry gate and P1 exclusion.” The project owner/coordinator must separately approve the full candidate SHA after independent re-review.
+**Status:** HISTORICAL Phase 0 DESIGN_OWNER remediation proposal (later independently approved at immutable `2cedaeac5657a8941fe9366f04029cd11b0cfd30`). The **post-freeze ADR-013..016** below remain PROPOSED and are not approved by that prior decision. **These are explicit disposition recommendations for Phase 0 review, not independently approved ADRs.** `ACCEPT` means “include this normatively in the architecture candidate”; `DEFER` means “bounded later-phase detail with a named re-entry gate and P1 exclusion.” The project owner/coordinator must separately approve the full candidate SHA after independent re-review.
 
 **Decision authority:** project owner/ORCHESTRATOR following independent REVIEWER clearance. **Design custodian:** DESIGN_OWNER. In this register `phase` states when contract is binding or a deferred question must be reopened. All future changes to an accepted semantic contract require a reviewed ADR amendment, not an undocumented implementation choice.
 
@@ -34,3 +34,18 @@
 ## Owner acceptance and change control
 
 Design Owner submits this register plus evidence. Independent Reviewer checks that ACCEPT rules are technically complete and that DEFER items have a phase and no hidden earlier dependency. ORCHESTRATOR/Project Owner separately records `PHASE_0_ARCHITECTURE_APPROVED` and exact SHA. Until then, **all statuses in this table are recommendations only**, no Phase 1 implementation and no merge/production authorization.
+
+## Post-freeze proposed DCR entries — P2 readiness (not approved)
+
+The accepted D01–D12 contract freeze remains in force. The new rows are design proposals only; no separate Orchestrator decision or independent architecture-review verdict has yet accepted them.
+
+| Proposal | Owner / scope | Proposed re-entry and non-regression condition |
+|---|---|---|
+| **D13 / ADR-013** | Runtime DESIGN_OWNER — Tokio-vs-threaded spike, bounded concurrent work, blocking I/O, cancel supervision | **Before P2 production-effect implementation:** `RUN-01..08` actual concurrency and failure evidence; no P1 retroactive concurrency claim. [ADR](proposals/adr-013-p2-runtime-concurrency.md) |
+| **D14 / ADR-014** | Runtime + Security/Operations — choose standalone process boundary and local IPC/auth | **P2 PRE-GATE / before native plugin production:** `ISO-01..06`, document fatal-failure blast radius and same-engine parity. [ADR](proposals/adr-014-standalone-worker-failure-domain.md) |
+| **D15 / ADR-015** | Operations + Security — audited uncertainty recovery and journal-loss policy | **P2 PRE-GATE:** `UNK-01..08`, guard retained absent effect/quiescence proof, no force-success or timeout-as-death. [ADR](proposals/adr-015-unknown-recovery-operations.md) |
+| **D16 / ADR-016** | Data/SNMP/Persistence/Migration — D03/D07 re-entry, JSON fractions, source contracts, plan-version replay, backend and perf | **P2:** scope/support and early matched-tier measurements; **P3:** binary-safe SNMP JSON; **P4:** PG/SQLite equivalence and transport; **P5:** other connectors. [ADR](proposals/adr-016-serialization-sources-persistence-gates.md) |
+
+**Material timing conflict for REVIEWER:** D03's generic binary JSON P5 deferral cannot leave D07's P3 SNMP `OctetString` output unsupported while claiming JSON mapping parity. The proposed bounded amendment moves **SNMP-specific** binary JSON schema selection and Python oracle to **before P3 output admission**, while retaining the general P5 serializer deferral. The correction must receive independent DCR approval; it is not automatically binding by appearing here.
+
+**No change without review:** D01 shared engine; D04 P2 SQLite manager/worker journal and P4 PostgreSQL manager plan; D05 remote transport choice at P4; D06 source-ack/unknown invariants; D09 deferred HA; and all frozen P1 negative admission tests. See [handoff](proposals/p2-readiness-handoff.md).

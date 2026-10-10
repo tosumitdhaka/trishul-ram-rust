@@ -91,3 +91,7 @@ Adapters return typed variants, independent of transport:
 For `OWN-10..14`, assert both ledger/journal persisted rows (including no-admission tombstone, outbox checksums and CAS revision) **and** actual absence of prohibited source/sink effects. Run the same semantic classification against in-process and remote adapters when each phase is implemented; the suite is a design acceptance specification, not executed evidence.
 
 **Gate:** P2 may ship only once the required local authority/journal subset passes real restart tests. P4 requires authenticated remote protocol, isolation, rollout, and partition proof. P1 harness is not allowed to implement a weaker version while advertising production-capable features.
+
+## Post-freeze proposed operator runbook (NOT APPROVED)
+
+See [ADR-015](proposals/adr-015-unknown-recovery-operations.md) for explicitly **proposed** audited reconciliation/quarantine of permanently lost journal evidence. This note does **not** authorize a new terminal transition, deletion of unresolved receipts, force-success, or guard release absent the existing exact-authority completion/refusal/quiescence proof. The frozen state table above remains binding until a reviewed DCR explicitly amends it.

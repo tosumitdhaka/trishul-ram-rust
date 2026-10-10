@@ -62,3 +62,7 @@ Recovery enumerates persistent manifests: staged-only is retryable, final matchi
 - `FS-01`: same-path input replacement after read is rejected at finalize without deleting replacement.
 - `FS-02`: kill before staged fsync, after fsync before rename, after rename before dir fsync, after dir fsync before receipt, after receipt before checkpoint, after checkpoint before ack; verify contents, manifests and unchanged source until decided.
 - `FS-03`: conflicting destination, symlink, cross-device, disk-full, unsupported directory fsync, and orphan cleanup fail closed.
+
+## Post-freeze proposed connector/revision exercise (NOT APPROVED)
+
+See [ADR-016](proposals/adr-016-serialization-sources-persistence-gates.md) for a review proposal mapping this existing generic source-unit contract to streaming CDR files, Kafka, UDP SNMP traps and HTTP webhooks. The identity formula above already binds `BranchObligationId` and `EffectId` to the immutable pipeline revision; recovery must use the original committed plan/identity rather than silently adopting a changed configuration. These are acceptance/re-entry proposals, not a new P1 connector promise or relaxed source-ack rule.

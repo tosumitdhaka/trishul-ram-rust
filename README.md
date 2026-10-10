@@ -2,7 +2,7 @@
 
 Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-ram), targeting equivalent user-facing capabilities through a new execution architecture rather than a mechanical port.
 
-> **Status: Phase 0 / PROPOSED.** Architecture and contracts are under review. There is no running Rust TRAM product in this repository yet. No design is frozen and no implementation is authorized by these documents.
+> **Governance status (2026-10-10):** Phase 0 architecture approved and frozen at `2cedaeac5657a8941fe9366f04029cd11b0cfd30` by independent review + Orchestrator. Phase 1 is **ephemeral-only**, not production; its R2 candidate `9757aaf29665d5f774e15583e1e4f23b140b9799` has independent SOURCE_REVIEW_PASS and EXECUTOR_PASS, subject to an explicit serial-only test limitation and pending separate Orchestrator R2 acceptance. [Post-P1 P2-readiness amendments](docs/phase-0/proposals/p2-readiness-handoff.md) are **proposed, not approved**.
 
 ## Design principles
 
@@ -15,7 +15,7 @@ Rust-native redesign of [TRAM (Python)](https://github.com/tosumitdhaka/trishul-
 
 ## Phase 0 documents
 
-**Independent review:** `CHANGES_REQUIRED` (review ID 5473153676) on original `96e11006e4784d2e70a7b0663c598c16376b04f7`. The documentation below is a **remediation candidate**, pending exact-SHA re-review; neither architecture approval nor Phase 1 code authorization has been granted. **P1 is an isolated ephemeral test harness, not a production-delivery milestone.**
+**Review history:** Initial Phase 0 `CHANGES_REQUIRED` (#5473153676), remediated in later revisions, followed by [independent ARCHITECTURE_REVIEW_PASS](https://github.com/tosumitdhaka/trishul-ram-rust/pull/1#pullrequestreview-5473697849) and [Orchestrator PHASE_0_ARCHITECTURE_APPROVED](https://github.com/tosumitdhaka/trishul-ram-rust/pull/1#issuecomment-6089485009) at the exact immutable frozen SHA above. **P1 is an isolated ephemeral test harness, not a production-delivery milestone.** This documentation refresh remains a separate **unapproved amendment proposal**.
 
 
 - [System architecture](docs/phase-0/architecture.md)
